@@ -35,8 +35,9 @@ export interface Profile {
   role:        UserRole;
   status:      UserStatus;
   dob:         string;            // ISO date (YYYY-MM-DD)
-  department:  Department | null; // 부서 (신규 필드)
-  position:    Position   | null; // 직급 (신규 필드)
+  department:  Department | null;
+  position:    Position   | null;
+  avatar_url:  string | null;
   created_at:  string;
 }
 

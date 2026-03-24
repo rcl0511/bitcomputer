@@ -164,7 +164,7 @@ export default function LoginPage() {
         {/* 상단 로고 */}
         <div className="slide-right slide-right-1 relative z-10 flex items-center gap-4">
           <img src="/bit_logo.png" alt="비트컴퓨터" className="h-10 w-auto"  />
-          <div style={{ width: '1px', height: '36px', background: 'rgba(255,255,255,0.2)' }} />
+          
           <div>
             <p className="text-base font-semibold text-white leading-tight">비트컴퓨터</p>
             <p className="text-xs text-white/50 mt-0.5 font-light tracking-wide">BIT COMPUTER CO., LTD.</p>

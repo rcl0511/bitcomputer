@@ -59,6 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [navigate]);
 
   // ── 프로필 단건 조회 ──────────────────────────────────────────────
+  // PGRST116 = "no rows returned" → null 반환 (프로필 미존재 → 정상 퇴사 처리 흐름)
+  // 그 외 오류 = DB 다운 / 네트워크 문제 → throw (로그아웃 처리 금지)
   const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
     const { data, error } = await supabase
       .from('profiles')
@@ -67,8 +69,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .single();
 
     if (error) {
-      console.warn('[AuthProvider] fetchProfile error:', error.code, error.message);
-      return null;
+      if (error.code === 'PGRST116') return null; // 프로필 행 없음
+      console.warn('[AuthProvider] fetchProfile DB 오류 — 로그아웃 생략:', error.code, error.message);
+      throw error; // DB 다운 등 일시적 오류 → 호출부에서 처리
     }
     return data as Profile;
   }, []);
@@ -146,50 +149,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [subscribeToProfileStatus]);
 
   // ── Auth 상태 초기화 ────────────────────────────────────────────
+  // INITIAL_SESSION: SDK가 localStorage에서 세션을 읽어 최초 1회 발생
+  //   → 세션 유무 확인 즉시 isLoading = false → 새로고침 시 Loading 화면 최소화
+  //   → 프로필 fetch는 이후 백그라운드에서 처리
   useEffect(() => {
     let mounted = true;
-
-    const initAuth = async () => {
-      const { data: { session: initialSession } } = await supabase.auth.getSession();
-      if (!mounted) return;
-
-      if (!initialSession) {
-        setLoading(false);
-        return;
-      }
-
-      const prof = await fetchProfile(initialSession.user.id);
-      if (!mounted) return;
-
-      if (!prof || prof.status === 'resigned') {
-        await handleResigned();
-        return;
-      }
-
-      setSession(initialSession);
-      setProfile(prof);
-      setLoading(false);
-      subscribeToProfileStatus(initialSession.user.id);
-    };
-
-    initAuth();
 
     const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
         if (!mounted) return;
 
-        if (event === 'SIGNED_OUT' || !newSession) {
-          setSession(null);
-          setProfile(null);
+        // ── 초기 세션 복원 (새로고침 시 항상 먼저 발생) ──────────────
+        if (event === 'INITIAL_SESSION') {
+          if (!newSession) {
+            setLoading(false);
+            return;
+          }
+          // 세션이 있으면 즉시 로딩 해제 → Loading 화면 제거
+          setSession(newSession);
           setLoading(false);
-          currentUserIdRef.current = null;
-          if (retryTimerRef.current)      { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
-          if (realtimeChannelRef.current) { supabase.removeChannel(realtimeChannelRef.current); realtimeChannelRef.current = null; }
+
+          // 프로필 + 퇴사 여부는 백그라운드에서 확인
+          let prof: Profile | null;
+          try {
+            prof = await fetchProfile(newSession.user.id);
+          } catch {
+            // DB 다운 등 일시적 오류 — 세션 유지, 로그아웃 금지
+            return;
+          }
+          if (!mounted) return;
+
+          if (!prof || prof.status === 'resigned') {
+            await handleResigned();
+            return;
+          }
+
+          setProfile(prof);
+          subscribeToProfileStatus(newSession.user.id);
           return;
         }
 
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          const prof = await fetchProfile(newSession.user.id);
+        // ── 신규 로그인 ───────────────────────────────────────────────
+        if (event === 'SIGNED_IN') {
+          if (!newSession) return;
+
+          let prof: Profile | null;
+          try {
+            prof = await fetchProfile(newSession.user.id);
+          } catch {
+            // DB 다운 등 일시적 오류 — 세션 유지, 로그아웃 금지
+            if (mounted) { setSession(newSession); setLoading(false); }
+            return;
+          }
           if (!mounted) return;
 
           if (!prof || prof.status === 'resigned') {
@@ -201,6 +212,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(prof);
           setLoading(false);
           subscribeToProfileStatus(newSession.user.id);
+          return;
+        }
+
+        // ── 토큰 갱신 ─────────────────────────────────────────────────
+        if (event === 'TOKEN_REFRESHED' && newSession) {
+          setSession(newSession);
+          return;
+        }
+
+        // ── 로그아웃 ──────────────────────────────────────────────────
+        if (event === 'SIGNED_OUT' || !newSession) {
+          setSession(null);
+          setProfile(null);
+          setLoading(false);
+          currentUserIdRef.current = null;
+          if (retryTimerRef.current)      { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+          if (realtimeChannelRef.current) { supabase.removeChannel(realtimeChannelRef.current); realtimeChannelRef.current = null; }
         }
       },
     );

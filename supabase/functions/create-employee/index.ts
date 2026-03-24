@@ -20,7 +20,6 @@ import { corsHeaders } from '../_shared/cors.ts';
 
 const SUPABASE_URL      = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const ANON_KEY          = Deno.env.get('SUPABASE_ANON_KEY')!;
 
 // =============================================
 // 사번(employee_id) 자동 생성
@@ -58,7 +57,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // ── Step 0: JWT 검증 & admin 역할 확인 ───────────────────────────
+    // ── Step 0: JWT 디코딩 & admin 역할 확인 ─────────────────────────
+    // Supabase 게이트웨이가 이미 JWT를 검증했으므로 직접 디코딩 사용
     const authorization = req.headers.get('Authorization');
     if (!authorization) {
       return new Response(
@@ -67,14 +67,17 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 호출자의 세션을 anon 키 + Authorization 헤더로 검증
-    const callerClient = createClient(SUPABASE_URL, ANON_KEY, {
-      global: { headers: { Authorization: authorization } },
-    });
-    const { data: { user: caller }, error: sessionError } = await callerClient.auth.getUser();
-    if (sessionError || !caller) {
+    let callerId: string;
+    try {
+      const token   = authorization.replace('Bearer ', '');
+      const raw     = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded  = raw + '='.repeat((4 - raw.length % 4) % 4);
+      const payload = JSON.parse(atob(padded));
+      if (!payload.sub) throw new Error('sub 없음');
+      callerId = payload.sub;
+    } catch {
       return new Response(
-        JSON.stringify({ error: '유효하지 않은 세션입니다.' }),
+        JSON.stringify({ error: '유효하지 않은 토큰입니다.' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
@@ -84,7 +87,7 @@ Deno.serve(async (req: Request) => {
     const { data: callerProfile } = await adminClient
       .from('profiles')
       .select('role')
-      .eq('id', caller.id)
+      .eq('id', callerId)
       .single();
 
     if (callerProfile?.role !== 'admin') {
@@ -95,12 +98,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── Step 1: 요청 바디 파싱 ──────────────────────────────────────
-    const { email, password, full_name, dob, role } = await req.json() as {
-      email:     string;
-      password:  string;
-      full_name: string;
-      dob:       string;
-      role:      'admin' | 'user';
+    const { email, password, full_name, dob, role, department, position } = await req.json() as {
+      email:      string;
+      password:   string;
+      full_name:  string;
+      dob:        string;
+      role:       'admin' | 'user';
+      department: string | null;
+      position:   string | null;
     };
 
     if (!email || !password || !full_name || !dob || !role) {
@@ -160,6 +165,8 @@ Deno.serve(async (req: Request) => {
         dob,
         role,
         status:      'active',
+        department:  department ?? null,
+        position:    position   ?? null,
       })
       .select()
       .single();

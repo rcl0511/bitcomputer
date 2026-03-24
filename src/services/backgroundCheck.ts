@@ -125,6 +125,22 @@ async function apiFetch<T>(
 // API Functions
 // =============================================
 
+// =============================================
+// Zod 안전 파싱 — ZodError → AppError(422) 변환
+// API 스펙이 변경되어도 "알 수 없는 오류" 대신 명확한 메시지 표시
+// =============================================
+function safeParse<T>(schema: z.ZodType<T>, raw: unknown): T {
+  try {
+    return schema.parse(raw);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      const details = err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+      throw new AppError(`API 응답 스펙 불일치 — ${details}`, 422);
+    }
+    throw new AppError('API 응답 파싱 실패', 422);
+  }
+}
+
 /** POST /background-checks — 배경 조회 요청 생성 */
 export async function createBackgroundCheck(
   request: BackgroundCheckRequest,
@@ -133,7 +149,7 @@ export async function createBackgroundCheck(
     `${API_PREFIX}/background-checks`,
     { method: 'POST', body: JSON.stringify(request) },
   );
-  return BackgroundCheckCreatedSchema.parse(raw);
+  return safeParse(BackgroundCheckCreatedSchema, raw);
 }
 
 /** GET /background-checks/{checkId} — 단건 결과 조회 */
@@ -141,7 +157,7 @@ export async function getBackgroundCheck(checkId: string): Promise<BackgroundChe
   const raw = await apiFetch<BackgroundCheckResult>(
     `${API_PREFIX}/background-checks/${encodeURIComponent(checkId)}`,
   );
-  return BackgroundCheckResultSchema.parse(raw);
+  return safeParse(BackgroundCheckResultSchema, raw);
 }
 
 /** GET /background-checks?employeeId=... — 직원별 이력 목록 */

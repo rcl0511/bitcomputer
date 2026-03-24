@@ -31,6 +31,7 @@ export function useBackgroundCheckResult(checkId: string | null) {
     queryKey: ['background-check', checkId],
     queryFn:  () => getBackgroundCheck(checkId!),
     enabled:  !!checkId,
+    retry:    false, // apiFetch가 500 재시도 처리, 503은 AppError로 즉시 throw
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return status === 'pending' ? POLL_INTERVAL_MS : false;
@@ -48,6 +49,7 @@ export function useBackgroundCheckList(employeeId: string | null) {
     queryFn:  () => listBackgroundChecks(employeeId!),
     enabled:  !!employeeId,
     staleTime: 1000 * 30,
+    retry:    false, // apiFetch가 500 재시도 처리
   });
 }
 

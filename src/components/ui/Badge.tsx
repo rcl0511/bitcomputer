@@ -8,14 +8,14 @@ const base = 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs 
 // =============================================
 const STATUS_CONFIG: Record<UserStatus, { dot: string; label: string; style: string }> = {
   active: {
-    dot:   'bg-emerald-500',
+    dot:   'bg-slate-400',
     label: '재직 중',
-    style: 'bg-emerald-50 text-emerald-700 ring-emerald-600/15',
+    style: 'bg-slate-50 text-slate-600 ring-slate-300/50',
   },
   resigned: {
-    dot:   'bg-red-500',
+    dot:   'bg-slate-400',
     label: '퇴사',
-    style: 'bg-red-50 text-red-700 ring-red-600/15',
+    style: 'bg-slate-50 text-slate-600 ring-slate-300/50',
   },
 };
 
@@ -33,8 +33,8 @@ export function StatusBadge({ status }: { status: UserStatus }) {
 // RoleBadge — admin / user
 // =============================================
 const ROLE_CONFIG: Record<UserRole, { label: string; style: string }> = {
-  admin: { label: '관리자', style: 'bg-violet-50 text-violet-700 ring-violet-600/15' },
-  user:  { label: '직원',   style: 'bg-sky-50    text-sky-700    ring-sky-600/15'    },
+  admin: { label: '관리자', style: 'bg-slate-50 text-slate-600 ring-slate-300/50' },
+  user:  { label: '직원',   style: 'bg-slate-50 text-slate-600 ring-slate-300/50' },
 };
 
 export function RoleBadge({ role }: { role: UserRole }) {

@@ -8,7 +8,17 @@
       "Skill(update-config)",
       "Bash(claude config:*)",
       "Bash(npm run:*)",
-      "Bash(__NEW_LINE_b30a80e68cc30053__ sed:*)"
+      "Bash(__NEW_LINE_b30a80e68cc30053__ sed:*)",
+      "Bash(curl -s -X GET \"https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com/background-checks\" -H \"Content-Type: application/json\")",
+      "Bash(curl -s -X POST \"https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com/background-checks\" -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(curl -s -X POST \"https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com/background-checks\" -H \"Content-Type: application/json\" -d '{\"\"\"\"employeeId\"\"\"\":\"\"\"\"TEST-001\"\"\"\"}')",
+      "Bash(curl -s -X POST \"https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com/background-checks\" -H \"Content-Type: application/json\" -d '{\"\"\"\"employeeId\"\"\"\":\"\"\"\"TEST-001\"\"\"\",\"\"\"\"firstName\"\"\"\":\"\"\"\"Chaerin\"\"\"\",\"\"\"\"lastName\"\"\"\":\"\"\"\"Ryu\"\"\"\",\"\"\"\"dateOfBirth\"\"\"\":\"\"\"\"1990-01-01\"\"\"\"}')",
+      "Bash(curl -s -X GET \"https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com/background-checks/CHK-c1b0d61c-f55e-4810-92bb-5b4357f424a2\")",
+      "Bash(curl -s -X GET \"https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com/background-checks?employeeId=TEST-001\")",
+      "Bash(curl -s -X GET \"https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com/background-checks?employeeId=EMP-NOTEXIST\")",
+      "Bash(curl -s -X GET \"https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com/background-checks?employeeId=EMP-2026-003\")",
+      "Bash(curl:*)",
+      "Bash(npx supabase:*)"
     ]
   }
 }

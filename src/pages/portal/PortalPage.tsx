@@ -1,16 +1,85 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Pencil, Save, BadgeCheck, CalendarDays,
   UserCircle2, IdCard, ShieldCheck, Clock, CheckCircle2,
-  Building2, Briefcase, ShieldAlert,
+  Building2, Briefcase, ShieldAlert, Camera,
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 import { AppLayout } from '../../components/layout/AppLayout';
 import { StatusBadge, RoleBadge } from '../../components/ui/Badge';
 import { useProfile, useUpdateProfile } from '../../hooks/useProfile';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../contexts/ToastContext';
 import { DEPARTMENTS, POSITIONS, DEPARTMENT_LABELS, POSITION_LABELS } from '../../types/database';
-import type { Department, Position, UserRole, UserStatus } from '../../types/database';
+import type { Profile, Department, Position, UserRole, UserStatus } from '../../types/database';
+
+// ── 아바타 업로드 컴포넌트 ────────────────────────────────────────────────────
+function AvatarUpload({ profile, onUploaded }: { profile: Profile; onUploaded: (url: string) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const toast = useToast();
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const ext  = file.name.split('.').pop();
+      const path = `${profile.id}/avatar.${ext}`;
+
+      const { error: upErr } = await supabase.storage
+        .from('avatars')
+        .upload(path, file, { upsert: true });
+      if (upErr) throw upErr;
+
+      const { data } = supabase.storage.from('avatars').getPublicUrl(path);
+      const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
+
+      await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', profile.id);
+      onUploaded(publicUrl);
+    } catch (err) {
+      console.error('[AvatarUpload]', err);
+      toast.error('프로필 사진 업로드에 실패했습니다.');
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="relative group">
+      {/* 아바타 이미지 or 이니셜 */}
+      <div className="flex h-32 w-32 items-center justify-center rounded-[2.5rem] bg-white text-4xl font-black text-[#004192] shadow-2xl ring-[12px] ring-white overflow-hidden">
+        {profile.avatar_url
+          ? <img src={profile.avatar_url} alt="프로필" className="h-full w-full object-cover" />
+          : profile.full_name[0]
+        }
+      </div>
+
+      {/* 재직 중 뱃지 */}
+      <div className="absolute bottom-1 right-1 rounded-full bg-emerald-500 p-2.5 ring-4 ring-white shadow-lg">
+        <CheckCircle2 className="h-4 w-4 text-white" />
+      </div>
+
+      {/* 업로드 오버레이 (hover) */}
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        className="absolute inset-0 flex items-center justify-center rounded-[2.5rem] bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        {uploading
+          ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+          : <Camera className="h-6 w-6 text-white drop-shadow" />
+        }
+      </button>
+
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+    </div>
+  );
+}
 
 // ── 공통 UI 컴포넌트 ──────────────────────────────────────────────────────────
 function InfoField({ icon: Icon, label, value, isMono = false }: {
@@ -48,6 +117,7 @@ export default function PortalPage() {
   const updateProfile = useUpdateProfile();
   const { isAdmin } = useAuth();
   const toast = useToast();
+  const queryClient = useQueryClient();
 
   const [isEditing, setEditing] = useState(false);
   const [fullName,   setFullName]   = useState('');
@@ -131,14 +201,10 @@ export default function PortalPage() {
               </div>
 
               <div className="relative -mt-16 flex flex-col items-center px-6 pb-10">
-                <div className="relative group">
-                  <div className="flex h-32 w-32 items-center justify-center rounded-[2.5rem] bg-white text-4xl font-black text-[#004192] shadow-2xl ring-[12px] ring-white">
-                    {profile.full_name[0]}
-                  </div>
-                  <div className="absolute bottom-1 right-1 rounded-full bg-emerald-500 p-2.5 ring-4 ring-white shadow-lg">
-                    <CheckCircle2 className="h-4 w-4 text-white" />
-                  </div>
-                </div>
+                <AvatarUpload profile={profile} onUploaded={(url) => {
+                  // 캐시 갱신 — useProfile이 자동으로 새 avatar_url을 반영
+                  queryClient.setQueryData(['profile', profile.id], { ...profile, avatar_url: url });
+                }} />
 
                 <div className="mt-6 text-center">
                   <h2 className="text-2xl font-bold text-slate-900">{profile.full_name}</h2>
@@ -157,16 +223,6 @@ export default function PortalPage() {
                   </div>
                 </div>
 
-                <div className="mt-8 flex w-full flex-col gap-3">
-                  <div className="flex items-center justify-between rounded-2xl bg-slate-50/50 px-5 py-4 ring-1 ring-slate-100">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase">STATUS</span>
-                    <StatusBadge status={profile.status} />
-                  </div>
-                  <div className="flex items-center justify-between rounded-2xl bg-slate-50/50 px-5 py-4 ring-1 ring-slate-100">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase">ACCESS</span>
-                    <RoleBadge role={profile.role} />
-                  </div>
-                </div>
               </div>
             </div>
           </div>

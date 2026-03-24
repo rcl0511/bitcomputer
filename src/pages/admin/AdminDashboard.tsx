@@ -382,9 +382,11 @@ export default function AdminDashboard() {
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full
-                        bg-indigo-100 text-xs font-semibold text-indigo-700">
-                        {emp.full_name[0]}
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full overflow-hidden bg-indigo-100 text-xs font-semibold text-indigo-700">
+                        {emp.avatar_url
+                          ? <img src={emp.avatar_url} alt={emp.full_name} className="h-full w-full object-cover" />
+                          : emp.full_name[0]
+                        }
                       </div>
                       <span className="text-sm font-medium text-slate-900">{emp.full_name}</span>
                     </div>
@@ -398,7 +400,7 @@ export default function AdminDashboard() {
                     </div>
                   </td>
                   <td className="px-5 py-4">
-                    <div className="flex items-center justify-end gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                    <div className="flex items-center justify-end gap-2">
                       {emp.status === 'active' && (
                         <button
                           onClick={() => setTerminateTarget(emp)}

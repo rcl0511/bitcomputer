@@ -247,7 +247,7 @@ export default function EmployeeDetailPage() {
 
   const createCheck     = useCreateBackgroundCheck();
   const updateCheckInDb = useUpdateBackgroundCheckResult();
-  const { data: history, isLoading: loadingHistory } = useBackgroundCheckList(employee?.employee_id ?? null);
+  const { data: history, isLoading: loadingHistory, error: historyError, refetch: refetchHistory } = useBackgroundCheckList(employee?.employee_id ?? null);
 
   // Auto-set active check from history if pending
   useEffect(() => {
@@ -359,8 +359,11 @@ export default function EmployeeDetailPage() {
           <div className="overflow-hidden rounded-2xl bg-white border border-slate-200 shadow-sm">
             <div className="p-6">
               <div className="flex items-center gap-4">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-xl font-bold text-white">
-                  {employee.full_name[0]}
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-xl font-bold text-white overflow-hidden">
+                  {employee.avatar_url
+                    ? <img src={employee.avatar_url} alt={employee.full_name} className="h-full w-full object-cover" />
+                    : employee.full_name[0]
+                  }
                 </div>
                 <div>
                   <h2 className="text-xl font-bold tracking-tight text-slate-900">{employee.full_name}</h2>
@@ -426,7 +429,7 @@ export default function EmployeeDetailPage() {
             <div className="flex items-center justify-between border-b border-slate-100 p-6 bg-slate-50/30">
               <div>
                 <h3 className="text-lg font-bold text-slate-900 tracking-tight">배경 조회 리포트</h3>
-                <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-0.5">External Identity Verification</p>
+                
               </div>
               <button
                 onClick={() => handleRequestCheck()}
@@ -446,7 +449,7 @@ export default function EmployeeDetailPage() {
               {activeCheckId ? (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">Current Assessment</h4>
+                    <h4 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">현재 상태 진단</h4>
                     {isPolling && isPending && (
                       <span className="flex items-center gap-1.5 text-[11px] font-black text-amber-600 bg-amber-50 px-2 py-1 rounded-md ring-1 ring-amber-100">
                         <Loader2 className="h-3 w-3 animate-spin" /> POLLING...
@@ -463,15 +466,15 @@ export default function EmployeeDetailPage() {
                             {checkResult.status === 'clear' ? <ShieldCheck className="h-7 w-7" /> : <ShieldAlert className="h-7 w-7" />}
                           </div>
                           <div>
-                            <p className="text-lg font-black text-slate-900">{checkResult.status === 'clear' ? 'VERIFIED' : 'ACTION REQUIRED'}</p>
+                            <p className="text-lg font-black text-slate-900">{checkResult.status === 'clear' ? '이상 없음' : '주의 필요'}</p>
                             <p className="text-xs font-mono font-medium text-slate-400">{checkResult.checkId}</p>
                           </div>
                        </div>
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <ResultItem icon={ShieldCheck} label="Criminal Record" value={checkResult.criminalRecord ? 'Found' : 'No Record'} ok={!checkResult.criminalRecord} />
-                          <ResultItem icon={GraduationCap} label="Education" value={checkResult.educationVerified ? 'Verified' : 'Unverified'} ok={!!checkResult.educationVerified} />
-                          <ResultItem icon={Briefcase} label="Employment" value={checkResult.employmentVerified ? 'Verified' : 'Unverified'} ok={!!checkResult.employmentVerified} />
-                          <ResultItem icon={CreditCard} label="Credit Score" value={checkResult.creditScore || '-'} ok={checkResult.creditScore !== 'poor'} />
+                          <ResultItem icon={ShieldCheck} label="범죄 이력" value={checkResult.criminalRecord ? '기록 있음' : '이상 없음'} ok={!checkResult.criminalRecord} />
+                          <ResultItem icon={GraduationCap} label="학력 인증" value={checkResult.educationVerified ? '인증 완료' : '미인증'} ok={!!checkResult.educationVerified} />
+                          <ResultItem icon={Briefcase} label="경력 인증" value={checkResult.employmentVerified ? '인증 완료' : '미인증'} ok={!!checkResult.employmentVerified} />
+                          <ResultItem icon={CreditCard} label="신용 등급" value={checkResult.creditScore ? { excellent: '최우수', good: '우수', fair: '보통', poor: '불량' }[checkResult.creditScore] : '-'} ok={checkResult.creditScore !== 'poor'} />
                        </div>
                     </div>
                   ) : null}
@@ -484,17 +487,38 @@ export default function EmployeeDetailPage() {
               )}
 
               {/* History Section */}
-              <div className="space-y-4 pt-4 border-t border-slate-50">
-                <h4 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">Verification History</h4>
+              {!activeCheckId && <div className="space-y-4 pt-4 border-t border-slate-50">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">확인 기록</h4>
+                  {historyError && (
+                    <button
+                      onClick={() => refetchHistory()}
+                      className="text-[11px] font-bold text-[#004192] hover:underline"
+                    >
+                      재시도
+                    </button>
+                  )}
+                </div>
                 <div className="grid gap-2.5">
                   {loadingHistory ? (
                     [1, 2].map(i => <div key={i} className="h-14 animate-pulse rounded-xl bg-slate-50" />)
-                  ) : history?.checks.map((check) => (
+                  ) : historyError ? (
+                    <div className="flex items-center gap-3 rounded-xl border border-rose-100 bg-rose-50/30 px-5 py-3.5">
+                      <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+                      <p className="text-xs font-medium text-rose-600">
+                        {historyError instanceof AppError && historyError.statusCode === 503
+                          ? '서버 과부하 — 잠시 후 재시도해주세요.'
+                          : '조회 이력을 불러오지 못했습니다.'}
+                      </p>
+                    </div>
+                  ) : !history?.checks.length ? (
+                    <p className="text-xs text-slate-400 py-2">조회 이력이 없습니다.</p>
+                  ) : history.checks.map((check) => (
                     <button
                       key={check.checkId}
                       onClick={() => setActiveCheckId(check.checkId)}
                       className={`flex items-center justify-between rounded-xl px-5 py-3.5 border transition-all ${
-                        activeCheckId === check.checkId ? 'border-indigo-200 bg-indigo-50/50 ring-2 ring-indigo-50' : 'border-slate-100 bg-white hover:border-slate-300'
+                        activeCheckId === check.checkId ? 'border-[#004192]/30 bg-blue-50/50 ring-2 ring-blue-50' : 'border-slate-100 bg-white hover:border-slate-300'
                       }`}
                     >
                       <div className="flex items-center gap-4">
@@ -508,7 +532,7 @@ export default function EmployeeDetailPage() {
                     </button>
                   ))}
                 </div>
-              </div>
+              </div>}
             </div>
           </div>
         </div>

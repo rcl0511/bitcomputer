@@ -2,6 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import type { Profile, UserRole, UserStatus, Department, Position } from '../types/database';
 
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
 // =============================================
 // 직원 목록 조회 (Admin)
 // =============================================
@@ -79,33 +82,28 @@ export function useCreateEmployee() {
     mutationFn: async (payload: CreateEmployeePayload) => {
       const { department, position, ...edgePayload } = payload;
 
-      const { data, error } = await supabase.functions.invoke<Profile>('create-employee', {
-        body: edgePayload,
+      // refreshSession()으로 항상 최신 access_token 확보
+      const { data: refreshData } = await supabase.auth.refreshSession();
+      const accessToken = refreshData.session?.access_token;
+      if (!accessToken) throw new Error('로그인 세션이 만료됐습니다. 다시 로그인해주세요.');
+
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-employee`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey':        SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ ...edgePayload, department, position }),
       });
 
-      if (error) {
-        if ('context' in error) {
-          try {
-            const body = await (error as unknown as { context: Response }).context.json();
-            throw new Error(body?.error ?? error.message);
-          } catch (parseErr) {
-            if (parseErr instanceof Error && parseErr.message !== error.message) throw parseErr;
-          }
-        }
-        throw new Error(error.message);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? body?.message ?? `서버 오류 (${res.status})`);
       }
 
+      const data: Profile | null = await res.json().catch(() => null);
       if (!data) throw new Error('직원 등록 응답이 비어있습니다.');
-
-      // 부서/직급이 있으면 생성 직후 profile 업데이트
-      if (department || position) {
-        await supabase
-          .from('profiles')
-          .update({ department, position })
-          .eq('id', data.id);
-        return { ...data, department, position } as Profile;
-      }
-
       return data;
     },
 
