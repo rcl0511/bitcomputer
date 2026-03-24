@@ -1,31 +1,40 @@
 /**
- * ⚠️  Service Role Client — 관리자 전용 Auth 작업에만 사용
+ * ⚠️  DEPRECATED — 이 클라이언트는 더 이상 직접 사용하지 않는다.
  *
- * Service Role Key는 RLS를 완전히 우회한다.
- * - 사용 목적: 신규 직원 계정 생성 (`auth.admin.createUser`)
- * - 이 클라이언트를 일반 데이터 조회에 사용하지 말 것
+ * 마이그레이션 완료:
+ *   - 직원 생성(Auth user + profile INSERT)
+ *     → Supabase Edge Function `create-employee`로 이전
+ *   - background_checks INSERT/UPDATE
+ *     → 일반 `supabase` 클라이언트(RLS: get_my_role() = 'admin')로 교체
  *
- * 프로덕션 권장 사항:
- * - 이 로직을 Supabase Edge Function으로 이전하고
- *   service role key를 서버 환경변수에서만 관리할 것.
- * - 현재 구현은 내부 관리자 도구(Internal Admin Tool)로 제한된 환경을 전제로 한다.
+ * 이 파일을 남겨두는 이유:
+ *   향후 VITE_SUPABASE_SERVICE_ROLE_KEY가 다시 필요한 경우를 대비한 참조용.
+ *   VITE_SUPABASE_SERVICE_ROLE_KEY가 .env에 없어도 앱이 크래시되지 않도록
+ *   방어적으로 초기화한다.
  */
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl        = import.meta.env.VITE_SUPABASE_URL             as string;
-const serviceRoleKey     = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY as string;
+const supabaseUrl    = import.meta.env.VITE_SUPABASE_URL             as string;
+const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY as string | undefined;
 
-if (!serviceRoleKey) {
-  console.warn('[adminClient] VITE_SUPABASE_SERVICE_ROLE_KEY is not set. Employee creation will fail.');
+if (serviceRoleKey) {
+  console.info('[adminClient] Service Role Key 감지됨 — 필요 시 사용 가능');
+} else {
+  console.info('[adminClient] VITE_SUPABASE_SERVICE_ROLE_KEY 미설정 — Edge Function 모드로 동작');
 }
 
-export const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-  auth: {
-    // 관리자 클라이언트는 세션을 유지하지 않는다.
-    persistSession:   false,
-    autoRefreshToken: false,
-    // supabase.ts의 기본 storageKey('sb-<ref>-auth-token')와 충돌을 막기 위해
-    // 고유한 키를 지정한다. 이것이 "Multiple GoTrueClient instances" 경고의 원인.
-    storageKey: 'sb-admin-service-role',
+// serviceRoleKey가 없을 때 빈 문자열 대신 'MISSING'을 사용:
+// createClient는 falsy 값(빈 문자열)에서 즉시 throw하지만,
+// truthy 문자열이면 클라이언트 인스턴스를 생성하고 실제 요청 시에만 401을 반환한다.
+// 앱 부팅 시 크래시를 막기 위한 방어 처리.
+export const adminClient = createClient(
+  supabaseUrl,
+  serviceRoleKey ?? 'MISSING_SERVICE_ROLE_KEY',
+  {
+    auth: {
+      persistSession:   false,
+      autoRefreshToken: false,
+      storageKey:       'sb-admin-service-role',
+    },
   },
-});
+);
