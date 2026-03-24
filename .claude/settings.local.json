@@ -4,7 +4,9 @@
       "Bash(npm install:*)",
       "Bash(npx tsc:*)",
       "Bash(npx vite:*)",
-      "Bash(npx vibeindex:*)"
+      "Bash(npx vibeindex:*)",
+      "Skill(update-config)",
+      "Bash(claude config:*)"
     ]
   }
 }

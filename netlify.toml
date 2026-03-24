@@ -1,3 +1,7 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
 # /api/* → 외부 Background Check API 역방향 프록시
 # Vite proxy는 로컬에서만 동작 — Netlify에서는 이 설정이 CORS 우회 역할
 # 반드시 SPA 폴백보다 먼저 선언해야 함 (Netlify는 위에서부터 매칭)
