@@ -9,13 +9,22 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    // 탭을 닫아도 세션 유지 (localStorage 기반)
-    persistSession: true,
-    // status 변경 감지를 위한 Realtime이 세션 갱신과 충돌하지 않도록 자동 갱신 활성화
-    autoRefreshToken: true,
+    persistSession:   true,   // 탭을 닫아도 세션 유지 (localStorage)
+    autoRefreshToken: true,   // Realtime과 세션 갱신 충돌 방지
   },
   realtime: {
-    // 명시적으로 WebSocket 설정 (네트워크 불안정 시 재연결)
     params: { eventsPerSecond: 10 },
+
+    // ── WebSocket 안정성 설정 (Sydney 리전 지연 대응) ──────────────
+    // 기본 타임아웃(10s)보다 여유 있게 — 첫 연결 실패를 줄인다
+    timeout: 20_000,
+
+    // heartbeat 주기 — 무응답 연결을 조기에 감지해 재연결 유도
+    heartbeatIntervalMs: 30_000,
+
+    // 재연결 백오프: 1s → 2s → 4s → ... → 최대 30s
+    // 기본 선형 증가 대신 지수 백오프로 서버 부하 분산
+    reconnectAfterMs: (tries: number) =>
+      Math.min(1_000 * Math.pow(2, tries - 1), 30_000),
   },
 });

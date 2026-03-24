@@ -16,42 +16,49 @@ import type { Profile } from '../types/database';
 // Context Shape
 // =============================================
 interface AuthContextValue {
-  session:         Session | null;
-  profile:         Profile | null;
-  isLoading:       boolean;
-  isAuthenticated: boolean;
-  isAdmin:         boolean;
-  signOut:         () => Promise<void>;
+  session:            Session | null;
+  profile:            Profile | null;
+  isLoading:          boolean;
+  isAuthenticated:    boolean;
+  isAdmin:            boolean;
+  signOut:            () => Promise<void>;
+  // Realtime 상태 — WebSocket 불안정 시 UI 알림 + 수동 재연결에 사용
+  realtimeAvailable:  boolean;
+  reconnectRealtime:  () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 // =============================================
+// Realtime 재시도 설정
+// Sydney 리전의 지연을 고려해 기본값보다 긴 백오프 사용
+// =============================================
+const REALTIME_MAX_RETRIES = 5;
+const REALTIME_BACKOFF_MS  = [5_000, 10_000, 20_000, 30_000, 60_000];
+
+// =============================================
 // Provider
-// Realtime 구독과 Auth 상태 관리는 여기서 단 1회 초기화된다.
-// 여러 Guard 컴포넌트가 useAuth()를 호출해도 구독이 중복 생성되지 않는다.
 // =============================================
 export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
-  const [session, setSession]   = useState<Session | null>(null);
-  const [profile, setProfile]   = useState<Profile | null>(null);
-  const [isLoading, setLoading] = useState(true);
+  const [session,           setSession]           = useState<Session | null>(null);
+  const [profile,           setProfile]           = useState<Profile | null>(null);
+  const [isLoading,         setLoading]           = useState(true);
+  const [realtimeAvailable, setRealtimeAvailable] = useState(true);
 
-  // Realtime 채널을 ref로 관리 — 구독 대상 userId가 바뀔 때만 재생성
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const retryTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 현재 구독 대상 userId를 ref로 보관 — reconnectRealtime()에서 사용
+  const currentUserIdRef   = useRef<string | null>(null);
 
-  // ── 퇴사 처리: 즉시 signOut 후 /login으로 이동 ──────────────────────
+  // ── 퇴사 처리 ───────────────────────────────────────────────────────
   const handleResigned = useCallback(async () => {
     await supabase.auth.signOut();
-    // session/profile은 onAuthStateChange SIGNED_OUT 이벤트에서 초기화됨
-    navigate('/login', {
-      replace: true,
-      state: { accessDenied: true },
-    });
+    navigate('/login', { replace: true, state: { accessDenied: true } });
   }, [navigate]);
 
-  // ── 프로필 단건 조회 ─────────────────────────────────────────────────
+  // ── 프로필 단건 조회 ──────────────────────────────────────────────
   const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
     const { data, error } = await supabase
       .from('profiles')
@@ -60,35 +67,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .single();
 
     if (error) {
-      // RLS에 의해 차단된 경우(resigned 등) PGRST116 에러 반환
       console.warn('[AuthProvider] fetchProfile error:', error.code, error.message);
       return null;
     }
     return data as Profile;
   }, []);
 
-  // ── Realtime 구독: profiles 테이블의 UPDATE 이벤트 감시 ──────────────
-  //
-  // 관리자가 status를 'resigned'로 변경하는 순간, Supabase가 WebSocket으로
-  // payload를 전송하고 handleResigned()가 즉시 실행된다.
+  // ── Realtime 구독 ────────────────────────────────────────────────
   const subscribeToProfileStatus = useCallback(
     (userId: string, retryCount = 0) => {
-      // 기존 채널이 있으면 정리 후 재생성
+      // 진행 중인 재시도 타이머 취소
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      // 기존 채널 정리
       if (realtimeChannelRef.current) {
         supabase.removeChannel(realtimeChannelRef.current);
         realtimeChannelRef.current = null;
       }
 
+      currentUserIdRef.current = userId;
+
       const channel = supabase
-        .channel(`profile-status:${userId}:${retryCount}`) // 채널 이름 고유화
+        .channel(`profile-status:${userId}:${retryCount}`)
         .on(
           'postgres_changes',
-          {
-            event:  'UPDATE',
-            schema: 'public',
-            table:  'profiles',
-            filter: `id=eq.${userId}`,
-          },
+          { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` },
           async (payload) => {
             const updated = payload.new as Profile;
             if (updated.status === 'resigned') {
@@ -99,25 +104,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           },
         )
         .subscribe((status) => {
-          if (status === 'CHANNEL_ERROR') {
-            const MAX_RETRIES = 3;
-            if (retryCount < MAX_RETRIES) {
-              const delay = 5_000 * (retryCount + 1); // 5s, 10s, 15s
+          if (status === 'SUBSCRIBED') {
+            // 연결 성공 — 이전에 unavailable 상태였다면 복구
+            setRealtimeAvailable(true);
+          }
+
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            if (retryCount < REALTIME_MAX_RETRIES) {
+              const delay = REALTIME_BACKOFF_MS[retryCount] ?? 60_000;
               console.warn(
-                `[AuthProvider] Realtime 연결 오류 — ${delay / 1000}초 후 재시도 ` +
-                `(${retryCount + 1}/${MAX_RETRIES})`,
+                `[AuthProvider] Realtime ${status} — ` +
+                `${delay / 1000}초 후 재시도 (${retryCount + 1}/${REALTIME_MAX_RETRIES})`,
               );
-              setTimeout(() => {
-                // 채널 ref가 아직 살아있을 때만 재시도 (언마운트 방지)
-                if (realtimeChannelRef.current) {
-                  subscribeToProfileStatus(userId, retryCount + 1);
+              retryTimerRef.current = setTimeout(() => {
+                if (currentUserIdRef.current) {
+                  subscribeToProfileStatus(currentUserIdRef.current, retryCount + 1);
                 }
               }, delay);
             } else {
+              // 최대 재시도 초과 → UI에 상태 노출
               console.error(
                 '[AuthProvider] Realtime 재연결 한도 초과 — ' +
-                '퇴사 즉시 차단이 비활성화됩니다. 페이지를 새로고침하세요.',
+                '퇴사 즉시 차단이 비활성화됩니다.',
               );
+              setRealtimeAvailable(false);
             }
           }
         });
@@ -127,15 +137,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [handleResigned],
   );
 
-  // ── Auth 상태 초기화 및 onAuthStateChange 구독 ────────────────────────
+  // 수동 재연결 — realtimeAvailable === false 시 UI에서 호출
+  const reconnectRealtime = useCallback(() => {
+    if (currentUserIdRef.current) {
+      setRealtimeAvailable(true); // 낙관적 업데이트 (재시도 시작 즉시)
+      subscribeToProfileStatus(currentUserIdRef.current, 0);
+    }
+  }, [subscribeToProfileStatus]);
+
+  // ── Auth 상태 초기화 ────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
 
     const initAuth = async () => {
-      const {
-        data: { session: initialSession },
-      } = await supabase.auth.getSession();
-
+      const { data: { session: initialSession } } = await supabase.auth.getSession();
       if (!mounted) return;
 
       if (!initialSession) {
@@ -144,7 +159,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const prof = await fetchProfile(initialSession.user.id);
-
       if (!mounted) return;
 
       if (!prof || prof.status === 'resigned') {
@@ -160,75 +174,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initAuth();
 
-    // Auth 이벤트(로그인/로그아웃/토큰 갱신) 감지
-    const {
-      data: { subscription: authSub },
-    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      if (!mounted) return;
-
-      if (event === 'SIGNED_OUT' || !newSession) {
-        setSession(null);
-        setProfile(null);
-        setLoading(false);
-        if (realtimeChannelRef.current) {
-          supabase.removeChannel(realtimeChannelRef.current);
-          realtimeChannelRef.current = null;
-        }
-        return;
-      }
-
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        const prof = await fetchProfile(newSession.user.id);
-
+    const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange(
+      async (event, newSession) => {
         if (!mounted) return;
 
-        if (!prof || prof.status === 'resigned') {
-          await handleResigned();
+        if (event === 'SIGNED_OUT' || !newSession) {
+          setSession(null);
+          setProfile(null);
+          setLoading(false);
+          currentUserIdRef.current = null;
+          if (retryTimerRef.current)      { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+          if (realtimeChannelRef.current) { supabase.removeChannel(realtimeChannelRef.current); realtimeChannelRef.current = null; }
           return;
         }
 
-        setSession(newSession);
-        setProfile(prof);
-        setLoading(false);
-        subscribeToProfileStatus(newSession.user.id);
-      }
-    });
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          const prof = await fetchProfile(newSession.user.id);
+          if (!mounted) return;
+
+          if (!prof || prof.status === 'resigned') {
+            await handleResigned();
+            return;
+          }
+
+          setSession(newSession);
+          setProfile(prof);
+          setLoading(false);
+          subscribeToProfileStatus(newSession.user.id);
+        }
+      },
+    );
 
     return () => {
       mounted = false;
       authSub.unsubscribe();
-      if (realtimeChannelRef.current) {
-        supabase.removeChannel(realtimeChannelRef.current);
-      }
+      if (retryTimerRef.current)      clearTimeout(retryTimerRef.current);
+      if (realtimeChannelRef.current) supabase.removeChannel(realtimeChannelRef.current);
     };
   }, [fetchProfile, handleResigned, subscribeToProfileStatus]);
 
-  // ── 수동 로그아웃 ────────────────────────────────────────────────────
+  // ── 수동 로그아웃 ───────────────────────────────────────────────
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     navigate('/login', { replace: true });
   }, [navigate]);
 
-  const value: AuthContextValue = {
-    session,
-    profile,
-    isLoading,
-    isAuthenticated: !!session,
-    isAdmin:         profile?.role === 'admin',
-    signOut,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{
+      session,
+      profile,
+      isLoading,
+      isAuthenticated:   !!session,
+      isAdmin:           profile?.role === 'admin',
+      signOut,
+      realtimeAvailable,
+      reconnectRealtime,
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 // =============================================
-// useAuth — Context 소비 훅
-// AuthProvider 외부에서 사용 시 명확한 에러 메시지 제공
+// useAuth
 // =============================================
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used inside <AuthProvider>');
-  }
+  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>');
   return ctx;
 }

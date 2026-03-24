@@ -1,11 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
-import type { Profile } from '../types/database';
+import type { Profile, UserRole, UserStatus, Department, Position } from '../types/database';
 
-interface UpdateProfilePayload {
-  full_name?: string;
-  dob?: string;
+export interface UpdateProfilePayload {
+  full_name?:  string;
+  dob?:        string;
+  // Admin-only fields
+  department?: Department | null;
+  position?:   Position   | null;
+  role?:       UserRole;
+  status?:     UserStatus;
 }
 
 /**

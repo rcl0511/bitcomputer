@@ -6,15 +6,22 @@ export type UserRole          = 'admin' | 'user';
 export type UserStatus        = 'active' | 'resigned';
 export type CheckStatus       = 'pending' | 'clear' | 'flagged';
 export type CreditScoreRating = 'excellent' | 'good' | 'fair' | 'poor';
+export type Department        = 'Management' | 'IT Development' | 'Sales' | 'Accounting' | 'HR';
+export type Position          = 'Intern' | 'Assistant' | 'Manager' | 'Senior Manager' | 'Director';
+
+export const DEPARTMENTS: Department[] = ['Management', 'IT Development', 'Sales', 'Accounting', 'HR'];
+export const POSITIONS:   Position[]   = ['Intern', 'Assistant', 'Manager', 'Senior Manager', 'Director'];
 
 export interface Profile {
-  id:          string;       // uuid (auth.users FK)
-  employee_id: string;       // EMP-YYYY-XXX
+  id:          string;
+  employee_id: string;
   full_name:   string;
   role:        UserRole;
   status:      UserStatus;
-  dob:         string;       // ISO date (YYYY-MM-DD)
-  created_at:  string;       // ISO datetime
+  dob:         string;            // ISO date (YYYY-MM-DD)
+  department:  Department | null; // 부서 (신규 필드)
+  position:    Position   | null; // 직급 (신규 필드)
+  created_at:  string;
 }
 
 export interface BackgroundCheck {
