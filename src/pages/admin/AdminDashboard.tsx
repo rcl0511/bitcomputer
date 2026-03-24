@@ -12,7 +12,8 @@ import {
   type CreateEmployeePayload,
 } from '../../hooks/useEmployees';
 import { useToast } from '../../contexts/ToastContext';
-import type { Profile, UserStatus } from '../../types/database';
+import { DEPARTMENTS, POSITIONS, DEPARTMENT_LABELS, POSITION_LABELS } from '../../types/database';
+import type { Profile, UserStatus, Department, Position } from '../../types/database';
 
 // ── 통계 카드 ─────────────────────────────────────────────────────────
 interface StatCardProps {
@@ -69,6 +70,7 @@ function CreateEmployeeModal({ open, onClose }: { open: boolean; onClose: () => 
 
   const [form, setForm]         = useState<CreateEmployeePayload>({
     email: '', password: '', full_name: '', dob: '', role: 'user',
+    department: null, position: null,
   });
   // TanStack Query의 isPending에 더해 로컬 isSubmitting을 두어
   // 어떤 경로로 종료되더라도 finally에서 반드시 로딩이 해제되도록 한다.
@@ -89,7 +91,7 @@ function CreateEmployeeModal({ open, onClose }: { open: boolean; onClose: () => 
     try {
       const profile = await createEmployee.mutateAsync(form);
       toast.success(`${profile.full_name} (${profile.employee_id}) 등록 완료`);
-      setForm({ email: '', password: '', full_name: '', dob: '', role: 'user' });
+      setForm({ email: '', password: '', full_name: '', dob: '', role: 'user', department: null, position: null });
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '직원 등록에 실패했습니다.';
@@ -166,6 +168,34 @@ function CreateEmployeeModal({ open, onClose }: { open: boolean; onClose: () => 
               <input type="date" required disabled={busy} value={form.dob} onChange={set('dob')}
                 max={new Date().toISOString().split('T')[0]} className={inputCls} />
             </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">부서</label>
+              <select
+                value={form.department ?? ''}
+                disabled={busy}
+                onChange={(e) => setForm((f) => ({ ...f, department: (e.target.value as Department) || null }))}
+                className={inputCls}
+              >
+                <option value="">— 선택 안함 —</option>
+                {DEPARTMENTS.map((d) => (
+                  <option key={d} value={d}>{DEPARTMENT_LABELS[d]}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">직급</label>
+              <select
+                value={form.position ?? ''}
+                disabled={busy}
+                onChange={(e) => setForm((f) => ({ ...f, position: (e.target.value as Position) || null }))}
+                className={inputCls}
+              >
+                <option value="">— 선택 안함 —</option>
+                {POSITIONS.map((p) => (
+                  <option key={p} value={p}>{POSITION_LABELS[p]}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* 인라인 에러 메시지 */}
@@ -189,9 +219,9 @@ function CreateEmployeeModal({ open, onClose }: { open: boolean; onClose: () => 
             <button
               type="submit"
               disabled={busy}
-              className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5
-                text-sm font-semibold text-white shadow-sm shadow-indigo-600/25
-                hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed
+              className="flex items-center gap-2 rounded-xl bg-[#004192] px-5 py-2.5
+                text-sm font-semibold text-white shadow-sm shadow-[#004192]/25
+                hover:bg-[#003578] disabled:opacity-50 disabled:cursor-not-allowed
                 active:scale-95 transition-all"
             >
               {busy ? (
@@ -221,6 +251,12 @@ export default function AdminDashboard() {
 
   const terminateEmployee = useTerminateEmployee();
   const { data: employees = [], isLoading } = useEmployees({ search, status });
+
+  const sortedEmployees = [...employees].sort((a, b) => {
+    if (a.status === 'resigned' && b.status !== 'resigned') return 1;
+    if (a.status !== 'resigned' && b.status === 'resigned') return -1;
+    return 0;
+  });
 
   const total        = employees.length;
   const activeCount  = employees.filter((e) => e.status === 'active').length;
@@ -275,9 +311,9 @@ export default function AdminDashboard() {
         </div>
         <button
           onClick={() => setCreate(true)}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5
-            text-sm font-semibold text-white shadow-sm shadow-indigo-600/25
-            hover:bg-indigo-700 active:scale-95 transition-all"
+          className="flex items-center gap-2 rounded-xl bg-[#004192] px-4 py-2.5
+            text-sm font-semibold text-white shadow-sm shadow-[#004192]/25
+            hover:bg-[#003578] active:scale-95 transition-all"
         >
           <UserPlus className="h-4 w-4" />
           신규 직원 등록
@@ -338,7 +374,7 @@ export default function AdminDashboard() {
                 </td>
               </tr>
             ) : (
-              employees.map((emp) => (
+              sortedEmployees.map((emp) => (
                 <tr key={emp.id}
                   className="group transition-colors hover:bg-slate-50/80">
                   <td className="px-5 py-4">

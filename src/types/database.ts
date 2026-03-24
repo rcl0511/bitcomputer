@@ -12,6 +12,22 @@ export type Position          = 'Intern' | 'Assistant' | 'Manager' | 'Senior Man
 export const DEPARTMENTS: Department[] = ['Management', 'IT Development', 'Sales', 'Accounting', 'HR'];
 export const POSITIONS:   Position[]   = ['Intern', 'Assistant', 'Manager', 'Senior Manager', 'Director'];
 
+export const DEPARTMENT_LABELS: Record<Department, string> = {
+  'Management':     '경영',
+  'IT Development': 'IT 개발',
+  'Sales':          '영업',
+  'Accounting':     '회계',
+  'HR':             '인사',
+};
+
+export const POSITION_LABELS: Record<Position, string> = {
+  'Intern':         '인턴',
+  'Assistant':      '사원',
+  'Manager':        '대리',
+  'Senior Manager': '과장',
+  'Director':       '이사',
+};
+
 export interface Profile {
   id:          string;
   employee_id: string;

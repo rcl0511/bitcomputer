@@ -9,7 +9,7 @@ export default function UnauthorizedPage() {
       <p className="text-sm text-gray-500">해당 페이지에 접근할 권한이 없습니다.</p>
       <Link
         to="/portal"
-        className="mt-2 rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
+        className="mt-2 rounded-lg bg-[#004192] px-5 py-2 text-sm font-medium text-white hover:bg-[#003578] transition-colors"
       >
         내 포털로 이동
       </Link>

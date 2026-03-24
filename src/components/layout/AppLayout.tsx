@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
-  Building2,
   LayoutDashboard,
   User,
   LogOut,
@@ -21,8 +20,8 @@ interface AppLayoutProps {
 const sidebarLink = ({ isActive }: { isActive: boolean }) =>
   `group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150
    ${isActive
-     ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-900/30'
-     : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+     ? 'bg-white/20 text-white shadow-sm'
+     : 'text-white/60 hover:bg-white/10 hover:text-white'
    }`;
 
 export function AppLayout({ children }: AppLayoutProps) {
@@ -49,10 +48,6 @@ export function AppLayout({ children }: AppLayoutProps) {
     }
   };
 
-  const initials = profile?.full_name
-    ? profile.full_name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
-    : '??';
-
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       <ConfirmDialog
@@ -71,22 +66,20 @@ export function AppLayout({ children }: AppLayoutProps) {
       />
 
       {/* ── Sidebar ──────────────────────────────────────────────── */}
-      <aside className="flex w-64 shrink-0 flex-col bg-slate-900">
+      <aside className="flex w-64 shrink-0 flex-col" style={{ backgroundColor: '#004192' }}>
 
         {/* Logo */}
-        <div className="flex h-16 items-center gap-3 border-b border-slate-800 px-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 shadow-lg shadow-indigo-900/40">
-            <Building2 className="h-4 w-4 text-white" />
-          </div>
+        <div className="flex h-16 items-center gap-3 border-b border-white/10 px-5">
+          <img src="/bit_logo.png" alt="비트컴퓨터" className="h-8 w-auto" />
           <div>
-            <p className="text-sm font-bold text-white leading-none">IEP</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Employee Portal</p>
+            <p className="text-sm font-bold text-white leading-none">비트컴퓨터</p>
+            <p className="text-[10px] text-white/40 mt-0.5">인사관리 시스템</p>
           </div>
         </div>
 
         {/* Navigation */}
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-          <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+          <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-white/30">
             메뉴
           </p>
 
@@ -102,7 +95,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
           {isAdmin && (
             <>
-              <p className="mt-4 mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+              <p className="mt-4 mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-white/30">
                 관리자
               </p>
               <NavLink to="/admin" className={sidebarLink} end>
@@ -118,32 +111,17 @@ export function AppLayout({ children }: AppLayoutProps) {
           )}
         </nav>
 
-        {/* User Card + Logout */}
-        <div className="border-t border-slate-800 p-3 space-y-2">
-          <div className="flex items-center gap-3 rounded-xl bg-slate-800 p-3">
-            {/* Avatar */}
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white shadow">
-              {initials}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-white">{profile?.full_name}</p>
-              <p className="truncate text-xs text-slate-400">{profile?.employee_id}</p>
-            </div>
-          </div>
-
+        {/* 하단 영역 */}
+        <div className="border-t border-white/10 p-3 space-y-2">
           {isAdmin && (
-            <div className="flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600/10 px-3 py-1.5">
-              <Shield className="h-3 w-3 text-indigo-400" />
-              <span className="text-xs font-medium text-indigo-400">관리자 권한</span>
+            <div className="flex items-center justify-center gap-1.5 rounded-lg bg-white/10 px-3 py-2">
+              <Shield className="h-3 w-3 text-white/60" />
+              <span className="text-xs font-medium text-white/60">관리자 권한</span>
             </div>
           )}
-
-          {/* 로그아웃 버튼 */}
           <button
             onClick={() => setShowLogoutConfirm(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2.5
-              text-sm font-medium text-slate-400 transition-colors
-              hover:bg-red-500/10 hover:text-red-400 active:scale-[0.98]"
+            className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-white/50 hover:bg-white/10 hover:text-white transition-all active:scale-[0.98]"
           >
             <LogOut className="h-4 w-4" />
             로그아웃
@@ -154,22 +132,14 @@ export function AppLayout({ children }: AppLayoutProps) {
       {/* ── Main Content ─────────────────────────────────────────── */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-8">
-          <div className="flex items-center gap-2 text-sm text-slate-400">
-            <span className="font-medium text-slate-800">{profile?.full_name}</span>
-            <span>·</span>
-            <span>{profile?.employee_id}</span>
-            <span>·</span>
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium
-                ${profile?.role === 'admin'
-                  ? 'bg-violet-100 text-violet-700'
-                  : 'bg-sky-100 text-sky-700'
-                }`}
-            >
-              {profile?.role === 'admin' ? '관리자' : '직원'}
-            </span>
-          </div>
+        <header className="flex h-16 shrink-0 items-center justify-end border-b border-slate-200 bg-white px-8">
+          <button
+            onClick={() => setShowLogoutConfirm(true)}
+            className="flex items-center gap-2 rounded-lg border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-500 hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-all active:scale-95"
+          >
+            <LogOut className="h-4 w-4" />
+            로그아웃
+          </button>
         </header>
 
         {/* Scrollable page content */}

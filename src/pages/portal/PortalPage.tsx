@@ -9,7 +9,7 @@ import { StatusBadge, RoleBadge } from '../../components/ui/Badge';
 import { useProfile, useUpdateProfile } from '../../hooks/useProfile';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../contexts/ToastContext';
-import { DEPARTMENTS, POSITIONS } from '../../types/database';
+import { DEPARTMENTS, POSITIONS, DEPARTMENT_LABELS, POSITION_LABELS } from '../../types/database';
 import type { Department, Position, UserRole, UserStatus } from '../../types/database';
 
 // ── 공통 UI 컴포넌트 ──────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ function InfoField({ icon: Icon, label, value, isMono = false }: {
         <Icon className="h-3.5 w-3.5" />
         <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
       </div>
-      <div className={`text-[15px] font-semibold ${isMono ? 'font-mono text-indigo-600' : 'text-slate-800'}`}>
+      <div className={`text-[15px] font-semibold ${isMono ? 'font-mono text-[#004192]' : 'text-slate-800'}`}>
         {value}
       </div>
     </div>
@@ -126,13 +126,13 @@ export default function PortalPage() {
           {/* ── 왼쪽: 프로필 요약 카드 ────────────────────────────── */}
           <div className="lg:col-span-4">
             <div className="overflow-hidden rounded-[2.5rem] bg-white shadow-xl shadow-slate-200/40 ring-1 ring-slate-200/50">
-              <div className="h-32 bg-indigo-600 relative overflow-hidden">
+              <div className="h-32 bg-[#004192] relative overflow-hidden">
                 <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_50%_120%,#ffffff_0%,transparent_50%)]" />
               </div>
 
               <div className="relative -mt-16 flex flex-col items-center px-6 pb-10">
                 <div className="relative group">
-                  <div className="flex h-32 w-32 items-center justify-center rounded-[2.5rem] bg-white text-4xl font-black text-indigo-600 shadow-2xl ring-[12px] ring-white">
+                  <div className="flex h-32 w-32 items-center justify-center rounded-[2.5rem] bg-white text-4xl font-black text-[#004192] shadow-2xl ring-[12px] ring-white">
                     {profile.full_name[0]}
                   </div>
                   <div className="absolute bottom-1 right-1 rounded-full bg-emerald-500 p-2.5 ring-4 ring-white shadow-lg">
@@ -145,7 +145,10 @@ export default function PortalPage() {
                   {/* Department / Position 표시 */}
                   {(profile.department || profile.position) && (
                     <p className="mt-1 text-sm text-slate-500">
-                      {[profile.position, profile.department].filter(Boolean).join(' · ')}
+                      {[
+                        profile.position   ? POSITION_LABELS[profile.position]     : null,
+                        profile.department ? DEPARTMENT_LABELS[profile.department]  : null,
+                      ].filter(Boolean).join(' · ')}
                     </p>
                   )}
                   <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-500 uppercase tracking-tighter">
@@ -175,16 +178,8 @@ export default function PortalPage() {
                 {isEditing ? (
                   /* 편집 모드 */
                   <form onSubmit={handleSubmit} className="flex flex-col h-full space-y-8">
-                    {/* Admin 배지 or 보안 안내 */}
-                    {isAdmin ? (
-                      <div className="rounded-2xl bg-indigo-50/60 p-5 border border-indigo-100 flex gap-4">
-                        <ShieldAlert className="h-6 w-6 text-indigo-500 shrink-0" />
-                        <div className="text-sm leading-relaxed text-indigo-800">
-                          <p className="font-bold mb-1">Admin Mode: Full Access</p>
-                          You are editing with Administrative Privileges.
-                        </div>
-                      </div>
-                    ) : (
+                    {/* 보안 안내 (일반 직원만) */}
+                    {!isAdmin && (
                       <div className="rounded-2xl bg-amber-50/60 p-5 border border-amber-100 flex gap-4">
                         <ShieldCheck className="h-6 w-6 text-amber-500 shrink-0" />
                         <div className="text-sm leading-relaxed text-amber-800">
@@ -230,13 +225,13 @@ export default function PortalPage() {
                           >
                             <option value="">— 선택 안함 —</option>
                             {DEPARTMENTS.map((d) => (
-                              <option key={d} value={d}>{d}</option>
+                              <option key={d} value={d}>{DEPARTMENT_LABELS[d]}</option>
                             ))}
                           </select>
                         ) : (
                           <input
                             type="text"
-                            value={profile.department ?? '—'}
+                            value={profile.department ? DEPARTMENT_LABELS[profile.department] : '—'}
                             disabled
                             className={disabledInputClass}
                           />
@@ -254,13 +249,13 @@ export default function PortalPage() {
                           >
                             <option value="">— 선택 안함 —</option>
                             {POSITIONS.map((p) => (
-                              <option key={p} value={p}>{p}</option>
+                              <option key={p} value={p}>{POSITION_LABELS[p]}</option>
                             ))}
                           </select>
                         ) : (
                           <input
                             type="text"
-                            value={profile.position ?? '—'}
+                            value={profile.position ? POSITION_LABELS[profile.position] : '—'}
                             disabled
                             className={disabledInputClass}
                           />
@@ -323,7 +318,7 @@ export default function PortalPage() {
                       <button
                         type="submit"
                         disabled={updateProfile.isPending}
-                        className="flex items-center gap-2 rounded-2xl bg-indigo-600 px-10 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
+                        className="flex items-center gap-2 rounded-2xl bg-[#004192] px-10 py-3.5 text-sm font-bold text-white shadow-lg shadow-[#004192]/20 hover:bg-[#003578] active:scale-95 transition-all disabled:opacity-50"
                       >
                         <Save className="h-4 w-4" />
                         {updateProfile.isPending ? '저장 중...' : '변경사항 저장'}
@@ -337,8 +332,8 @@ export default function PortalPage() {
                     <InfoField icon={IdCard}        label="사원 번호"  value={profile.employee_id} isMono />
                     <InfoField icon={CalendarDays}  label="생년월일"   value={profile.dob} />
                     <InfoField icon={ShieldCheck}   label="권한 등급"  value={<RoleBadge role={profile.role} />} />
-                    <InfoField icon={Building2}     label="부서"       value={profile.department ?? '—'} />
-                    <InfoField icon={Briefcase}     label="직급"       value={profile.position   ?? '—'} />
+                    <InfoField icon={Building2}     label="부서"       value={profile.department ? DEPARTMENT_LABELS[profile.department] : '—'} />
+                    <InfoField icon={Briefcase}     label="직급"       value={profile.position   ? POSITION_LABELS[profile.position]   : '—'} />
                     <InfoField icon={Clock}         label="입사 일자"  value={joinedDate} />
                     <InfoField icon={BadgeCheck}    label="검증 상태"  value="시스템 인증됨" />
                   </div>

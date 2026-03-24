@@ -82,7 +82,7 @@ export function ConfirmDialog({
             className={`rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50
               ${danger
                 ? 'bg-red-600 hover:bg-red-700'
-                : 'bg-indigo-600 hover:bg-indigo-700'
+                : 'bg-[#004192] hover:bg-[#003578]'
               }`}
           >
             {isLoading ? '처리 중...' : confirmLabel}

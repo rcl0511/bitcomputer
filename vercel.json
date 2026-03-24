@@ -1,12 +1,17 @@
 {
-  "rewrites": [
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "routes": [
     {
-      "source": "/api/:path*",
-      "destination": "https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com/:path*"
+      "src": "/api/(.*)",
+      "dest": "https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com/$1"
     },
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
     }
   ]
 }

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import type { Profile, UserRole, UserStatus } from '../types/database';
+import type { Profile, UserRole, UserStatus, Department, Position } from '../types/database';
 
 // =============================================
 // 직원 목록 조회 (Admin)
@@ -63,11 +63,13 @@ export function useEmployee(profileId: string | undefined) {
 //         SERVICE_ROLE_KEY는 서버(Edge Function) 환경변수에서만 사용
 // =============================================
 export interface CreateEmployeePayload {
-  email:     string;
-  password:  string;
-  full_name: string;
-  dob:       string;   // YYYY-MM-DD
-  role:      UserRole;
+  email:      string;
+  password:   string;
+  full_name:  string;
+  dob:        string;   // YYYY-MM-DD
+  role:       UserRole;
+  department: Department | null;
+  position:   Position   | null;
 }
 
 export function useCreateEmployee() {
@@ -75,13 +77,13 @@ export function useCreateEmployee() {
 
   return useMutation({
     mutationFn: async (payload: CreateEmployeePayload) => {
+      const { department, position, ...edgePayload } = payload;
+
       const { data, error } = await supabase.functions.invoke<Profile>('create-employee', {
-        body: payload,
+        body: edgePayload,
       });
 
       if (error) {
-        // FunctionsHttpError: Edge Function이 4xx/5xx를 반환한 경우
-        // error.context.json()으로 바디를 파싱해 사용자 친화적 메시지 추출
         if ('context' in error) {
           try {
             const body = await (error as unknown as { context: Response }).context.json();
@@ -94,6 +96,16 @@ export function useCreateEmployee() {
       }
 
       if (!data) throw new Error('직원 등록 응답이 비어있습니다.');
+
+      // 부서/직급이 있으면 생성 직후 profile 업데이트
+      if (department || position) {
+        await supabase
+          .from('profiles')
+          .update({ department, position })
+          .eq('id', data.id);
+        return { ...data, department, position } as Profile;
+      }
+
       return data;
     },
 
@@ -105,6 +117,39 @@ export function useCreateEmployee() {
 
     onError: (err) => {
       console.error('[useCreateEmployee] 실패:', err);
+    },
+  });
+}
+
+// =============================================
+// 직원 프로필 수정 (Admin)
+// =============================================
+export interface UpdateEmployeePayload {
+  full_name:  string;
+  dob:        string;
+  department: Department | null;
+  position:   Position   | null;
+  role:       UserRole;
+  status:     UserStatus;
+}
+
+export function useUpdateEmployee() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ profileId, payload }: { profileId: string; payload: UpdateEmployeePayload }) => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(payload)
+        .eq('id', profileId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Profile;
+    },
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: ['employees'] });
+      qc.setQueryData(['employee', updated.id], updated);
     },
   });
 }

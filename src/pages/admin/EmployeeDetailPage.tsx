@@ -3,12 +3,13 @@ import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft, ShieldCheck, ShieldAlert, Loader2, ClipboardList,
   CheckCircle, XCircle, GraduationCap, Briefcase, CreditCard,
-  Clock, AlertCircle, UserX, Calendar, Hash
+  Clock, AlertCircle, UserX, Calendar, Hash, Building2, Layers,
 } from 'lucide-react';
 import { AppLayout } from '../../components/layout/AppLayout';
 import { StatusBadge, RoleBadge, CheckStatusBadge } from '../../components/ui/Badge';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { useEmployee, useTerminateEmployee } from '../../hooks/useEmployees';
+import { useEmployee, useTerminateEmployee, useUpdateEmployee } from '../../hooks/useEmployees';
+import type { UpdateEmployeePayload } from '../../hooks/useEmployees';
 import {
   useBackgroundCheckList,
   useBackgroundCheckResult,
@@ -17,8 +18,8 @@ import {
   type CreateCheckPayload,
 } from '../../hooks/useBackgroundCheck';
 import { useToast } from '../../contexts/ToastContext';
-import { AppError } from '../../types/database';
-import type { BackgroundCheckResult } from '../../types/database';
+import { AppError, DEPARTMENT_LABELS, POSITION_LABELS, DEPARTMENTS, POSITIONS } from '../../types/database';
+import type { BackgroundCheckResult, Department, Position, UserRole, UserStatus } from '../../types/database';
 
 // =============================================
 // 1. Sub-Components (Skeletons & Helpers)
@@ -107,7 +108,128 @@ function ResultItem({ icon: Icon, label, value, ok }: { icon: any; label: string
 }
 
 // =============================================
-// 2. Main Page Component
+// 2. Edit Profile Modal
+// =============================================
+function EditProfileModal({
+  employee,
+  onClose,
+}: {
+  employee: import('../../types/database').Profile;
+  onClose: () => void;
+}) {
+  const updateEmployee = useUpdateEmployee();
+  const toast = useToast();
+
+  const [fullName,   setFullName]   = useState(employee.full_name);
+  const [dob,        setDob]        = useState(employee.dob);
+  const [department, setDepartment] = useState<Department | ''>(employee.department ?? '');
+  const [position,   setPosition]   = useState<Position   | ''>(employee.position   ?? '');
+  const [role,       setRole]       = useState<UserRole>(employee.role);
+  const [status,     setStatus]     = useState<UserStatus>(employee.status);
+
+  const inputCls =
+    'w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm ' +
+    'text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white ' +
+    'focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-colors';
+  const selectCls = inputCls + ' cursor-pointer';
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload: UpdateEmployeePayload = {
+      full_name:  fullName.trim(),
+      dob,
+      department: (department as Department) || null,
+      position:   (position   as Position)   || null,
+      role,
+      status,
+    };
+    try {
+      await updateEmployee.mutateAsync({ profileId: employee.id, payload });
+      toast.success(`${fullName} 프로필이 수정되었습니다.`);
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '수정에 실패했습니다.');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+          <div>
+            <h2 className="font-bold text-slate-900">프로필 수정</h2>
+            <p className="mt-0.5 text-xs text-slate-500">{employee.employee_id}</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
+            <XCircle className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4 px-6 py-5">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">이름</label>
+              <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className={inputCls} />
+            </div>
+            <div className="col-span-2">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">생년월일</label>
+              <input type="date" required value={dob} onChange={(e) => setDob(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">부서</label>
+              <select value={department} onChange={(e) => setDepartment(e.target.value as Department | '')} className={selectCls}>
+                <option value="">— 선택 안함 —</option>
+                {DEPARTMENTS.map((d) => (
+                  <option key={d} value={d}>{DEPARTMENT_LABELS[d]}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">직급</label>
+              <select value={position} onChange={(e) => setPosition(e.target.value as Position | '')} className={selectCls}>
+                <option value="">— 선택 안함 —</option>
+                {POSITIONS.map((p) => (
+                  <option key={p} value={p}>{POSITION_LABELS[p]}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">권한</label>
+              <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className={selectCls}>
+                <option value="user">직원</option>
+                <option value="admin">관리자</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">재직 상태</label>
+              <select value={status} onChange={(e) => setStatus(e.target.value as UserStatus)} className={selectCls}>
+                <option value="active">재직 중</option>
+                <option value="resigned">퇴사</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-1">
+            <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 active:scale-95 transition-all">
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={updateEmployee.isPending}
+              className="flex items-center gap-2 rounded-xl bg-[#004192] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#003578] disabled:opacity-50 active:scale-95 transition-all"
+            >
+              {updateEmployee.isPending ? '저장 중...' : '저장'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// =============================================
+// 3. Main Page Component
 // =============================================
 export default function EmployeeDetailPage() {
   const { profileId } = useParams<{ profileId: string }>();
@@ -117,6 +239,7 @@ export default function EmployeeDetailPage() {
   const { data: employee, isLoading: loadingEmp } = useEmployee(profileId);
   const terminateEmployee = useTerminateEmployee();
   const [showTerminate, setShowTerminate] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
 
   const [activeCheckId, setActiveCheckId] = useState<string | null>(null);
   const [retryAfter, setRetryAfter] = useState<number | null>(null);
@@ -210,6 +333,7 @@ export default function EmployeeDetailPage() {
 
   return (
     <AppLayout>
+      {showEdit && <EditProfileModal employee={employee} onClose={() => setShowEdit(false)} />}
       <ConfirmDialog
         open={showTerminate}
         title="퇴사 처리 확인"
@@ -257,14 +381,33 @@ export default function EmployeeDetailPage() {
                   <span className="font-bold text-slate-700">{employee.dob}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2 text-slate-400 font-medium"><Building2 className="h-4 w-4" /> 부서</span>
+                  <span className="font-bold text-slate-700">
+                    {employee.department ? DEPARTMENT_LABELS[employee.department] : '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2 text-slate-400 font-medium"><Layers className="h-4 w-4" /> 직급</span>
+                  <span className="font-bold text-slate-700">
+                    {employee.position ? POSITION_LABELS[employee.position] : '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2 text-slate-400 font-medium"><Clock className="h-4 w-4" /> 등록일</span>
                   <span className="font-bold text-slate-700">{new Date(employee.created_at).toLocaleDateString()}</span>
                 </div>
               </div>
             </div>
 
-            {employee.status === 'active' && (
-              <div className="border-t border-slate-100 bg-slate-50/50 p-4">
+            <div className="border-t border-slate-100 bg-slate-50/50 p-4 space-y-2">
+              <button
+                onClick={() => setShowEdit(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#004192]/30 bg-white py-2.5 text-sm font-bold text-[#004192] hover:bg-[#004192]/5 transition-all active:scale-[0.98]"
+              >
+                <Layers className="h-4 w-4" />
+                프로필 수정
+              </button>
+              {employee.status === 'active' && (
                 <button
                   onClick={() => setShowTerminate(true)}
                   className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white py-2.5 text-sm font-bold text-rose-600 hover:bg-rose-50 transition-all active:scale-[0.98]"
@@ -272,8 +415,8 @@ export default function EmployeeDetailPage() {
                   <UserX className="h-4 w-4" />
                   계정 비활성화 (퇴사)
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
@@ -288,7 +431,7 @@ export default function EmployeeDetailPage() {
               <button
                 onClick={() => handleRequestCheck()}
                 disabled={createCheck.isPending || isPending || retryAfter !== null}
-                className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700 disabled:opacity-50 transition-all active:scale-95"
+                className="flex items-center gap-2 rounded-xl bg-[#004192] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#004192]/20 hover:bg-[#003578] disabled:opacity-50 transition-all active:scale-95"
               >
                 {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
                 조회 요청
