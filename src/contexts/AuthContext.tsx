@@ -72,14 +72,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // 관리자가 status를 'resigned'로 변경하는 순간, Supabase가 WebSocket으로
   // payload를 전송하고 handleResigned()가 즉시 실행된다.
   const subscribeToProfileStatus = useCallback(
-    (userId: string) => {
+    (userId: string, retryCount = 0) => {
       // 기존 채널이 있으면 정리 후 재생성
       if (realtimeChannelRef.current) {
         supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
       }
 
       const channel = supabase
-        .channel(`profile-status:${userId}`)
+        .channel(`profile-status:${userId}:${retryCount}`) // 채널 이름 고유화
         .on(
           'postgres_changes',
           {
@@ -90,20 +91,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           },
           async (payload) => {
             const updated = payload.new as Profile;
-
             if (updated.status === 'resigned') {
-              // 관리자가 "퇴사" 버튼을 누른 순간 — 즉시 세션 만료
               await handleResigned();
               return;
             }
-
-            // 그 외 프로필 변경(이름, 역할 등) 반영
             setProfile(updated);
           },
         )
         .subscribe((status) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[AuthProvider] Realtime channel error — status watch unavailable');
+            const MAX_RETRIES = 3;
+            if (retryCount < MAX_RETRIES) {
+              const delay = 5_000 * (retryCount + 1); // 5s, 10s, 15s
+              console.warn(
+                `[AuthProvider] Realtime 연결 오류 — ${delay / 1000}초 후 재시도 ` +
+                `(${retryCount + 1}/${MAX_RETRIES})`,
+              );
+              setTimeout(() => {
+                // 채널 ref가 아직 살아있을 때만 재시도 (언마운트 방지)
+                if (realtimeChannelRef.current) {
+                  subscribeToProfileStatus(userId, retryCount + 1);
+                }
+              }, delay);
+            } else {
+              console.error(
+                '[AuthProvider] Realtime 재연결 한도 초과 — ' +
+                '퇴사 즉시 차단이 비활성화됩니다. 페이지를 새로고침하세요.',
+              );
+            }
           }
         });
 

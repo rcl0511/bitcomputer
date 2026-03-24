@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   Building2,
@@ -8,8 +8,10 @@ import {
   ChevronRight,
   Shield,
 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../contexts/ToastContext';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -25,13 +27,25 @@ const sidebarLink = ({ isActive }: { isActive: boolean }) =>
 
 export function AppLayout({ children }: AppLayoutProps) {
   const { profile, isAdmin, signOut } = useAuth();
-  const { error } = useToast();
+  const { error: toastError } = useToast();
+  const queryClient = useQueryClient();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const handleSignOut = async () => {
+    setIsSigningOut(true);
     try {
+      // 1. TanStack Query 캐시 전체 삭제 — 다음 사용자가 이전 데이터를 볼 수 없도록
+      queryClient.clear();
+      // 2. Supabase auth 토큰 외의 앱 전용 스토리지 항목 정리
+      sessionStorage.clear();
+      // (Supabase auth 토큰은 supabase.auth.signOut()이 직접 제거함)
+      // 3. 세션 종료 및 /login 리다이렉트
       await signOut();
     } catch {
-      error('로그아웃 중 오류가 발생했습니다.');
+      toastError('로그아웃 중 오류가 발생했습니다.');
+      setIsSigningOut(false);
+      setShowLogoutConfirm(false);
     }
   };
 
@@ -41,6 +55,20 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
+      <ConfirmDialog
+        open={showLogoutConfirm}
+        title="로그아웃"
+        description={
+          <>
+            정말 로그아웃 하시겠습니까?<br />
+            <span className="text-slate-500">현재 세션이 종료되고 로그인 페이지로 이동합니다.</span>
+          </>
+        }
+        confirmLabel="로그아웃"
+        isLoading={isSigningOut}
+        onConfirm={handleSignOut}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
 
       {/* ── Sidebar ──────────────────────────────────────────────── */}
       <aside className="flex w-64 shrink-0 flex-col bg-slate-900">
@@ -90,8 +118,8 @@ export function AppLayout({ children }: AppLayoutProps) {
           )}
         </nav>
 
-        {/* User Card */}
-        <div className="border-t border-slate-800 p-3">
+        {/* User Card + Logout */}
+        <div className="border-t border-slate-800 p-3 space-y-2">
           <div className="flex items-center gap-3 rounded-xl bg-slate-800 p-3">
             {/* Avatar */}
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white shadow">
@@ -101,21 +129,25 @@ export function AppLayout({ children }: AppLayoutProps) {
               <p className="truncate text-sm font-medium text-white">{profile?.full_name}</p>
               <p className="truncate text-xs text-slate-400">{profile?.employee_id}</p>
             </div>
-            <button
-              onClick={handleSignOut}
-              title="로그아웃"
-              className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-white"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
           </div>
 
           {isAdmin && (
-            <div className="mt-2 flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600/10 px-3 py-1.5">
+            <div className="flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600/10 px-3 py-1.5">
               <Shield className="h-3 w-3 text-indigo-400" />
               <span className="text-xs font-medium text-indigo-400">관리자 권한</span>
             </div>
           )}
+
+          {/* 로그아웃 버튼 */}
+          <button
+            onClick={() => setShowLogoutConfirm(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2.5
+              text-sm font-medium text-slate-400 transition-colors
+              hover:bg-red-500/10 hover:text-red-400 active:scale-[0.98]"
+          >
+            <LogOut className="h-4 w-4" />
+            로그아웃
+          </button>
         </div>
       </aside>
 

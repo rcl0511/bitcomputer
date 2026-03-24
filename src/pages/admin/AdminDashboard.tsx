@@ -284,17 +284,7 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* 통계 카드 */}
-      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard icon={Users}       label="전체 직원"    value={total}        sub="명"
-          iconBg="bg-slate-100" iconColor="text-slate-600" accent="bg-slate-400" />
-        <StatCard icon={UserCheck}   label="재직 중"      value={activeCount}  sub="명"
-          iconBg="bg-emerald-100" iconColor="text-emerald-600" accent="bg-emerald-500" />
-        <StatCard icon={UserX}       label="퇴사"         value={resignedCount} sub="명"
-          iconBg="bg-red-100" iconColor="text-red-600" accent="bg-red-500" />
-        <StatCard icon={TrendingUp}  label="이번 달 신규" value={thisMonthCount} sub="명"
-          iconBg="bg-indigo-100" iconColor="text-indigo-600" accent="bg-indigo-500" />
-      </div>
+
 
       {/* 검색 & 필터 */}
       <div className="mb-4 flex items-center gap-3">

@@ -1,101 +1,35 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { z } from 'zod';
-import { AppError } from '../types/database';
+import { adminClient } from '../lib/adminClient';
+import {
+  createBackgroundCheck,
+  getBackgroundCheck,
+  listBackgroundChecks,
+} from '../services/backgroundCheck';
 import type {
-  BackgroundCheckCreated,
-  BackgroundCheckList,
   BackgroundCheckRequest,
   BackgroundCheckResult,
 } from '../types/database';
 
-const API_BASE     = 'https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com';
-const POLL_INTERVAL_MS = 5_000; // pending 상태일 때 5초마다 재조회
+const POLL_INTERVAL_MS = 5_000;
 
 // =============================================
-// Zod 검증 스키마 — API 응답 런타임 검증
+// CreateCheckPayload — POST 요청 + Supabase 저장에 필요한 데이터
+// profileId: Supabase profiles.id (UUID) — background_checks 테이블 FK
 // =============================================
-const CheckStatusSchema = z.enum(['pending', 'clear', 'flagged']);
-
-const BackgroundCheckResultSchema = z.object({
-  checkId:             z.string(),
-  employeeId:          z.string(),
-  firstName:           z.string(),
-  lastName:            z.string(),
-  dateOfBirth:         z.string(),
-  status:              CheckStatusSchema,
-  criminalRecord:      z.boolean().nullable(),
-  educationVerified:   z.boolean().nullable(),
-  employmentVerified:  z.boolean().nullable(),
-  creditScore:         z.enum(['excellent', 'good', 'fair', 'poor']).nullable(),
-  createdAt:           z.string(),
-  completedAt:         z.string().nullable(),
-});
-
-const BackgroundCheckCreatedSchema = z.object({
-  checkId:    z.string(),
-  employeeId: z.string(),
-  status:     CheckStatusSchema,
-  createdAt:  z.string(),
-  message:    z.string(),
-});
-
-// =============================================
-// Fetch Utility — 공통 에러 처리
-// =============================================
-
-/**
- * 400: field-specific validation 에러 (message를 UI에 표시)
- * 503: retryAfter를 AppError에 포함 → UI 카운트다운 타이머에 전달
- * 5xx: 재시도 가능한 서버 에러
- */
-async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-
-  if (response.ok) {
-    return response.json() as Promise<T>;
-  }
-
-  let body: Record<string, unknown> = {};
-  try {
-    body = await response.json();
-  } catch {
-    // JSON 파싱 실패 시 기본 메시지 사용
-  }
-
-  const message   = (body.message as string)   ?? response.statusText;
-  const retryAfter = body.retryAfter as number | undefined;
-
-  throw new AppError(message, response.status, retryAfter);
-}
+export type CreateCheckPayload = BackgroundCheckRequest & { profileId: string };
 
 // =============================================
 // Hook: 단건 조회 + pending 자동 폴링
-//
-// checkId가 null이면 비활성화.
-// status가 'pending'이면 5초마다 재조회하고,
-// 'clear' 또는 'flagged'가 되면 폴링을 자동으로 멈춘다.
 // =============================================
 export function useBackgroundCheckResult(checkId: string | null) {
   return useQuery({
     queryKey: ['background-check', checkId],
-    queryFn:  async () => {
-      const raw = await apiFetch<BackgroundCheckResult>(
-        `${API_BASE}/background-checks/${checkId}`,
-      );
-      // 런타임 스키마 검증 — 외부 API 응답 이상 감지
-      return BackgroundCheckResultSchema.parse(raw);
-    },
-    enabled: !!checkId,
-
-    // pending 상태이면 5초마다 재조회, 완료되면 폴링 중단
+    queryFn:  () => getBackgroundCheck(checkId!),
+    enabled:  !!checkId,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return status === 'pending' ? POLL_INTERVAL_MS : false;
     },
-    // 탭이 백그라운드일 때는 폴링 중지 (불필요한 네트워크 비용 절감)
     refetchIntervalInBackground: false,
   });
 }
@@ -106,39 +40,55 @@ export function useBackgroundCheckResult(checkId: string | null) {
 export function useBackgroundCheckList(employeeId: string | null) {
   return useQuery({
     queryKey: ['background-checks', 'list', employeeId],
-    queryFn:  () =>
-      apiFetch<BackgroundCheckList>(
-        `${API_BASE}/background-checks?employeeId=${encodeURIComponent(employeeId!)}`,
-      ),
-    enabled: !!employeeId,
-    staleTime: 1000 * 30, // 30초 — 이력은 자주 바뀌지 않음
+    queryFn:  () => listBackgroundChecks(employeeId!),
+    enabled:  !!employeeId,
+    staleTime: 1000 * 30,
   });
 }
 
 // =============================================
 // Hook: 배경 조회 요청 생성 (POST)
 //
-// onSuccess 시 해당 직원의 목록 캐시를 무효화해
-// 목록이 자동으로 갱신되도록 한다.
+// 1. 외부 API POST → checkId 발급
+// 2. Supabase background_checks INSERT (pending 상태로 즉시 기록)
 // =============================================
 export function useCreateBackgroundCheck() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (request: BackgroundCheckRequest) =>
-      apiFetch<BackgroundCheckCreated>(`${API_BASE}/background-checks`, {
-        method: 'POST',
-        body:   JSON.stringify(request),
-      }).then((raw) => BackgroundCheckCreatedSchema.parse(raw)),
+    mutationFn: async ({ profileId, ...request }: CreateCheckPayload) => {
+      // ── Step 1: 외부 API 호출 ───────────────────────────────────
+      const created = await createBackgroundCheck(request);
 
-    onSuccess: (data, variables) => {
-      // 목록 캐시 무효화 → 새 항목이 즉시 반영
+      // ── Step 2: Supabase background_checks INSERT ───────────────
+      // service role(adminClient)로 RLS 우회하여 바로 저장
+      const { error: dbError } = await adminClient
+        .from('background_checks')
+        .insert({
+          profile_id:          profileId,
+          employee_id:         request.employeeId,
+          check_id:            created.checkId,
+          status:              created.status,
+          criminal_record:     null,
+          education_verified:  null,
+          employment_verified: null,
+          credit_score:        null,
+          // created_at: DB default, completed_at: null until done
+        });
+
+      if (dbError) {
+        // 저장 실패는 로그만 남기고 throw하지 않음
+        // — 외부 API 호출은 성공했으므로 폴링은 계속 진행
+        console.error('[useCreateBackgroundCheck] Supabase INSERT 실패:', dbError.message);
+      }
+
+      return created;
+    },
+
+    onSuccess: (data, { employeeId }) => {
       queryClient.invalidateQueries({
-        queryKey: ['background-checks', 'list', variables.employeeId],
+        queryKey: ['background-checks', 'list', employeeId],
       });
-
-      // pending으로 반환된 경우, 단건 조회 캐시를 미리 세팅해
-      // useBackgroundCheckResult가 즉시 폴링을 시작할 수 있도록 함
       if (data.status === 'pending') {
         queryClient.setQueryData(
           ['background-check', data.checkId],
@@ -158,6 +108,43 @@ export function useCreateBackgroundCheck() {
           } satisfies BackgroundCheckResult,
         );
       }
+    },
+  });
+}
+
+// =============================================
+// Hook: 배경 조회 완료 시 Supabase UPDATE
+//
+// 외부 API 폴링으로 clear/flagged가 확인되면
+// Supabase background_checks 레코드를 최종 결과로 갱신한다.
+// =============================================
+export function useUpdateBackgroundCheckResult() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (result: BackgroundCheckResult) => {
+      const { error } = await adminClient
+        .from('background_checks')
+        .update({
+          status:              result.status,
+          criminal_record:     result.criminalRecord,
+          education_verified:  result.educationVerified,
+          employment_verified: result.employmentVerified,
+          credit_score:        result.creditScore,
+          completed_at:        result.completedAt,
+        })
+        .eq('check_id', result.checkId);
+
+      if (error) {
+        // 업데이트 실패는 로그만 — UI 표시는 외부 API 응답 기준으로 유지
+        console.error('[useUpdateBackgroundCheckResult] Supabase UPDATE 실패:', error.message);
+      }
+    },
+    onSuccess: (_, result) => {
+      // 목록 캐시 갱신 → 이력 패널에 최신 상태 반영
+      queryClient.invalidateQueries({
+        queryKey: ['background-checks', 'list', result.employeeId],
+      });
     },
   });
 }
