@@ -113,7 +113,6 @@ async function apiFetch<T>(
 
   // 500: 최대 2회 재시도 (지수 백오프 — 1s, 2s)
   if (response.status === 500 && _retryCount < 2) {
-    console.warn(`[bgCheck] 500 에러 — ${_retryCount + 1}회 재시도 중... (url=${url})`);
     await new Promise((r) => setTimeout(r, 1_000 * (_retryCount + 1)));
     return apiFetch<T>(url, options, _retryCount + 1);
   }

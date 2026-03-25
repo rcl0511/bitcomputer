@@ -342,12 +342,8 @@ export default function EmployeeDetailPage() {
 
   const { data: checkResult, error: checkError, isFetching: isPolling, refetch: refetchCheck } = useBackgroundCheckResult(activeCheckId);
 
-  // Handle 503 Overload
-  useEffect(() => {
-    if (checkError instanceof AppError && checkError.statusCode === 503) {
-      setRetryAfter(checkError.retryAfter ?? 30);
-    }
-  }, [checkError]);
+  // 503 처리는 useBackgroundCheckResult의 refetchInterval이 자동으로 담당.
+  // 여기서 별도 RetryCountdown을 띄우면 이중 재시도가 발생하므로 제거.
 
   // 폴링 완료(pending → clear/flagged) 시 Supabase 레코드 업데이트
   const prevStatusRef = useRef<string | undefined>(undefined);
@@ -530,7 +526,9 @@ export default function EmployeeDetailPage() {
                 <RetryCountdown seconds={retryAfter} onRetry={handleAutoRetry} />
               )}
 
-              {activeCheckId ? (
+              {createCheck.isPending ? (
+                <PendingCheckScreen checkId="요청 처리 중..." />
+              ) : activeCheckId ? (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">현재 상태 진단</h4>
