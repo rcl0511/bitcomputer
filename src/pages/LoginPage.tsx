@@ -6,7 +6,9 @@ import { supabase } from '../lib/supabase';
 export default function LoginPage() {
   const navigate     = useNavigate();
   const location     = useLocation();
-  const from         = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/portal';
+  // 로그인 후 이동 위치는 항상 /portal 고정
+  // (이전 경로 복원 시 권한 없는 페이지로 직접 진입될 수 있어 제거)
+  const from = '/portal';
   const accessDenied = !!(location.state as { accessDenied?: boolean })?.accessDenied;
 
   const [email, setEmail]       = useState('');

@@ -66,17 +66,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch { return null; }
   });
 
-  // session·profile 둘 다 캐시에 있으면 로딩 없이 즉시 렌더
-  // ※ authReady가 INITIAL_SESSION 완료를 보장하므로 lazy initializer 유지
-  const [isLoading, setLoading] = useState(() => {
-    try {
-      const hasSession = Object.keys(localStorage).some(
-        (k) => k.startsWith('sb-') && k.endsWith('-auth-token'),
-      );
-      const hasProfile = !!localStorage.getItem('iep_profile');
-      return !(hasSession && hasProfile);
-    } catch { return true; }
-  });
+  // 캐시가 있어도 만료 상태일 수 있으므로 항상 true로 시작
+  // INITIAL_SESSION 완료 후에만 false로 전환 → AuthGuard가 검증 전 렌더 차단
+  // (session·profile 동기 초기화는 유지 — 전환 시 깜빡임 방지용 임시값)
+  const [isLoading, setLoading] = useState(true);
   // INITIAL_SESSION 처리 완료 여부 — AuthGuard가 이 값을 보고 쿼리 실행 허용
   // lazy initializer가 isLoading=false로 시작해도 INITIAL_SESSION 전에 쿼리가
   // 실행되지 않도록 별도로 관리한다
@@ -209,14 +202,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // ── 초기 세션 복원 (새로고침 시 항상 먼저 발생) ──────────────
         if (event === 'INITIAL_SESSION') {
           if (!newSession) {
-            // 세션 없음 — 만료·무효 토큰일 수 있으므로 오염된 캐시 전부 제거
+            // 세션 없음 — 만료·무효 토큰, 오염 캐시 전부 제거 후 로딩 해제
             setSession(null);
             setProfileAndCache(null);
             try {
-              const staleKey = Object.keys(localStorage).find(
-                (k) => k.startsWith('sb-') && k.endsWith('-auth-token'),
-              );
-              if (staleKey) localStorage.removeItem(staleKey);
+              Object.keys(localStorage)
+                .filter((k) => k.startsWith('sb-') && k.endsWith('-auth-token'))
+                .forEach((k) => localStorage.removeItem(k));
             } catch { /* 무시 */ }
             setLoading(false);
             setAuthReady(true);
@@ -225,14 +217,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           setSession(newSession);
 
-          // 프로필 fetch — 완료 후 isLoading 해제 (검증 전에 화면을 열지 않음)
+          // fetchProfile 완료 후 isLoading 해제 — 프로필 없는 상태로 렌더링 방지
           let prof: Profile | null;
           try {
             prof = await fetchProfile(newSession.user.id);
           } catch {
             // DB 다운 등 일시적 오류 — 세션 유지, 로그아웃 금지
-            // iep_profile 캐시는 삭제: 프로필 fetch 실패 상태에서 stale 캐시가 남으면
-            // 다음 새로고침 때 lazy initializer가 오염된 값을 읽는다
+            // iep_profile 캐시 삭제: stale 캐시가 남으면 다음 새로고침 때 오염
             if (mounted) {
               try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
               setLoading(false);
