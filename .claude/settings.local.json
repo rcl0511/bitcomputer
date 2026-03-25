@@ -18,7 +18,12 @@
       "Bash(curl -s -X GET \"https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com/background-checks?employeeId=EMP-NOTEXIST\")",
       "Bash(curl -s -X GET \"https://54capvm12g.execute-api.ap-northeast-2.amazonaws.com/background-checks?employeeId=EMP-2026-003\")",
       "Bash(curl:*)",
-      "Bash(npx supabase:*)"
+      "Bash(npx supabase:*)",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/USER/Desktop/react/bitcomputer/**)",
+      "Bash(done)",
+      "Bash(node:*)"
     ]
   }
 }

@@ -359,7 +359,7 @@ export default function AdminDashboard() {
         <table className="min-w-full">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50">
-              {['사번', '이름', '역할', '상태', '등록일', ''].map((h) => (
+              {['사번', '이름', '역할', '상태', '생년월일', '부서', ''].map((h) => (
                 <th key={h}
                   className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                   {h}
@@ -402,8 +402,13 @@ export default function AdminDashboard() {
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-1.5 text-sm text-slate-500">
                       <CalendarDays className="h-3.5 w-3.5" />
-                      {new Date(emp.created_at).toLocaleDateString('ko-KR')}
+                      {emp.dob}
                     </div>
+                  </td>
+                  <td className="px-5 py-4">
+                    <span className="text-sm text-slate-500">
+                      {emp.department ? DEPARTMENT_LABELS[emp.department] : '—'}
+                    </span>
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex items-center justify-end gap-2">
