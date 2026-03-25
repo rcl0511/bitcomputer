@@ -53,6 +53,34 @@ function ResultSkeleton() {
   );
 }
 
+function PendingCheckScreen({ checkId }: { checkId: string }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setElapsed((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const ss = String(elapsed % 60).padStart(2, '0');
+
+  return (
+    <div className="flex flex-col items-center gap-6 rounded-2xl border border-amber-100 bg-amber-50/40 px-6 py-12">
+      <div className="relative flex h-20 w-20 items-center justify-center">
+        <span className="absolute inset-0 rounded-full bg-amber-400/20 animate-ping" />
+        <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-amber-100">
+          <Loader2 className="h-9 w-9 animate-spin text-amber-500" />
+        </div>
+      </div>
+      <div className="text-center">
+        <p className="text-base font-bold text-slate-800">신원 조회 진행 중</p>
+        <p className="mt-1 text-sm text-slate-500">결과 도출까지 최대 2분 소요됩니다</p>
+        <p className="mt-3 font-mono text-2xl font-black tabular-nums text-amber-600">{mm}:{ss}</p>
+      </div>
+      <p className="font-mono text-[11px] text-slate-400">{checkId}</p>
+    </div>
+  );
+}
+
 function RetryCountdown({ seconds, onRetry }: { seconds: number; onRetry: () => void }) {
   const [remaining, setRemaining] = useState(seconds);
   const onRetryRef = useRef(onRetry);
@@ -457,8 +485,8 @@ export default function EmployeeDetailPage() {
                     )}
                   </div>
                   
-                  {isPending && !checkResult ? (
-                    <ResultSkeleton />
+                  {isPending ? (
+                    <PendingCheckScreen checkId={activeCheckId!} />
                   ) : checkResult ? (
                     <div className={`rounded-2xl border p-6 ${checkResult.status === 'clear' ? 'border-emerald-100 bg-emerald-50/20' : 'border-rose-100 bg-rose-50/20'}`}>
                        <div className="mb-6 flex items-center gap-5">

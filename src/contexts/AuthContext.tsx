@@ -19,6 +19,9 @@ interface AuthContextValue {
   session:            Session | null;
   profile:            Profile | null;
   isLoading:          boolean;
+  // INITIAL_SESSION 처리가 완전히 끝났는지 여부
+  // AuthGuard는 이 값이 true가 될 때까지 쿼리 실행을 막는다
+  authReady:          boolean;
   isAuthenticated:    boolean;
   isAdmin:            boolean;
   signOut:            () => Promise<void>;
@@ -64,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   // session·profile 둘 다 캐시에 있으면 로딩 없이 즉시 렌더
-  // ※ 1~3번 수정으로 만료 캐시가 남는 경우 자체가 없어지므로 lazy initializer 유지
+  // ※ authReady가 INITIAL_SESSION 완료를 보장하므로 lazy initializer 유지
   const [isLoading, setLoading] = useState(() => {
     try {
       const hasSession = Object.keys(localStorage).some(
@@ -74,6 +77,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return !(hasSession && hasProfile);
     } catch { return true; }
   });
+  // INITIAL_SESSION 처리 완료 여부 — AuthGuard가 이 값을 보고 쿼리 실행 허용
+  // lazy initializer가 isLoading=false로 시작해도 INITIAL_SESSION 전에 쿼리가
+  // 실행되지 않도록 별도로 관리한다
+  const [authReady, setAuthReady] = useState(false);
   const [realtimeAvailable, setRealtimeAvailable] = useState(true);
 
   // 프로필 캐시 동기화
@@ -212,6 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (staleKey) localStorage.removeItem(staleKey);
             } catch { /* 무시 */ }
             setLoading(false);
+            setAuthReady(true);
             return;
           }
 
@@ -228,6 +236,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (mounted) {
               try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
               setLoading(false);
+              setAuthReady(true);
             }
             return;
           }
@@ -241,6 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfileAndCache(prof);
           subscribeToProfileStatus(newSession.user.id);
           setLoading(false);
+          setAuthReady(true);
           return;
         }
 
@@ -270,6 +280,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(newSession);
           setProfileAndCache(prof);
           setLoading(false);
+          setAuthReady(true);
           subscribeToProfileStatus(newSession.user.id);
           return;
         }
@@ -313,6 +324,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session,
       profile,
       isLoading,
+      authReady,
       isAuthenticated:   !!session,
       isAdmin:           profile?.role === 'admin',
       signOut,

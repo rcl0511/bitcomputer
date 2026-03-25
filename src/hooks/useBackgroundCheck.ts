@@ -15,7 +15,8 @@ import { AppError } from '../types/database';
 // RLS 정책 "admins_all_background_checks" (get_my_role() = 'admin')가
 // 관리자 세션(JWT)을 가진 요청만 허용하므로 보안 수준은 동일하다.
 
-const POLL_INTERVAL_MS = 5_000;
+// 결과 도출까지 약 2분 소요 → 30초 간격으로 폴링 (과도한 재시도 방지)
+const POLL_INTERVAL_MS = 30_000;
 
 // =============================================
 // CreateCheckPayload — POST 요청 + Supabase 저장에 필요한 데이터
