@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   Pencil, Save, BadgeCheck, CalendarDays,
   UserCircle2, IdCard, ShieldCheck, Clock, CheckCircle2,
-  Building2, Briefcase, ShieldAlert, Camera,
+  Building2, Briefcase, ShieldAlert, Camera, Mail, Lock,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { AppLayout } from '../../components/layout/AppLayout';
@@ -119,6 +119,8 @@ export default function PortalPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
 
+  const { session } = useAuth();
+
   const [isEditing, setEditing] = useState(false);
   const [fullName,   setFullName]   = useState('');
   const [dob,        setDob]        = useState('');
@@ -126,6 +128,9 @@ export default function PortalPage() {
   const [position,   setPosition]   = useState<Position   | ''>('');
   const [role,       setRole]       = useState<UserRole>('user');
   const [status,     setStatus]     = useState<UserStatus>('active');
+  const [email,        setEmail]        = useState('');
+  const [newPassword,  setNewPassword]  = useState('');
+  const [confirmPw,    setConfirmPw]    = useState('');
 
   useEffect(() => {
     if (profile) {
@@ -136,7 +141,10 @@ export default function PortalPage() {
       setRole(profile.role);
       setStatus(profile.status);
     }
-  }, [profile]);
+    if (session?.user?.email) {
+      setEmail(session.user.email);
+    }
+  }, [profile, session]);
 
   if (!profile) return null;
 
@@ -151,11 +159,25 @@ export default function PortalPage() {
     setPosition(profile.position ?? '');
     setRole(profile.role);
     setStatus(profile.status);
+    setEmail(session?.user?.email ?? '');
+    setNewPassword('');
+    setConfirmPw('');
     setEditing(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 비밀번호 확인
+    if (newPassword && newPassword !== confirmPw) {
+      toast.error('새 비밀번호가 일치하지 않습니다.');
+      return;
+    }
+    if (newPassword && newPassword.length < 6) {
+      toast.error('비밀번호는 6자 이상이어야 합니다.');
+      return;
+    }
+
     const payload = isAdmin
       ? {
           full_name:  fullName.trim(),
@@ -168,7 +190,30 @@ export default function PortalPage() {
       : { full_name: fullName.trim(), dob };
 
     await updateProfile.mutateAsync(payload);
+
+    // 이메일 변경
+    const currentEmail = session?.user?.email ?? '';
+    if (email.trim() && email.trim() !== currentEmail) {
+      const { error } = await supabase.auth.updateUser({ email: email.trim() });
+      if (error) {
+        toast.error(`이메일 변경 실패: ${error.message}`);
+        return;
+      }
+      toast.success('이메일 변경 확인 메일이 발송되었습니다. 메일을 확인해주세요.');
+    }
+
+    // 비밀번호 변경
+    if (newPassword) {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        toast.error(`비밀번호 변경 실패: ${error.message}`);
+        return;
+      }
+    }
+
     toast.success('변경사항이 안전하게 저장되었습니다.');
+    setNewPassword('');
+    setConfirmPw('');
     setEditing(false);
   };
 
@@ -363,6 +408,51 @@ export default function PortalPage() {
                       </div>
                     </div>
 
+                    {/* 계정 보안 섹션 */}
+                    <div className="space-y-4 border-t border-slate-100 pt-6">
+                      <p className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-1">계정 보안</p>
+                      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                        {/* 이메일 */}
+                        <div className="space-y-3 sm:col-span-2">
+                          <label className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-1">이메일 (Email)</label>
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className={inputClass}
+                            placeholder="새 이메일 주소"
+                          />
+                        </div>
+
+                        {/* 새 비밀번호 */}
+                        <div className="space-y-3">
+                          <label className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-1">새 비밀번호 (Password)</label>
+                          <input
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            className={inputClass}
+                            placeholder="변경하지 않으려면 비워두세요"
+                          />
+                        </div>
+
+                        {/* 비밀번호 확인 */}
+                        <div className="space-y-3">
+                          <label className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-1">비밀번호 확인</label>
+                          <input
+                            type="password"
+                            value={confirmPw}
+                            onChange={(e) => setConfirmPw(e.target.value)}
+                            className={`${inputClass} ${newPassword && confirmPw && newPassword !== confirmPw ? 'border-red-400 focus:border-red-400 focus:ring-red-400/10' : ''}`}
+                            placeholder="새 비밀번호를 다시 입력하세요"
+                          />
+                          {newPassword && confirmPw && newPassword !== confirmPw && (
+                            <p className="text-xs text-red-500 ml-1">비밀번호가 일치하지 않습니다.</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="mt-auto flex items-center justify-end gap-4 pt-8 border-t border-slate-100">
                       <button
                         type="button"
@@ -392,6 +482,8 @@ export default function PortalPage() {
                     <InfoField icon={Briefcase}     label="직급"       value={profile.position   ? POSITION_LABELS[profile.position]   : '—'} />
                     <InfoField icon={Clock}         label="입사 일자"  value={joinedDate} />
                     <InfoField icon={BadgeCheck}    label="검증 상태"  value="시스템 인증됨" />
+                    <InfoField icon={Mail}          label="이메일"     value={session?.user?.email ?? '—'} />
+                    <InfoField icon={Lock}          label="비밀번호"   value="••••••••" />
                   </div>
                 )}
               </div>

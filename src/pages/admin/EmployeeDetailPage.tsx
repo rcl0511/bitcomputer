@@ -3,12 +3,12 @@ import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft, ShieldCheck, ShieldAlert, Loader2, ClipboardList,
   CheckCircle, XCircle, GraduationCap, Briefcase, CreditCard,
-  Clock, AlertCircle, UserX, Calendar, Hash, Building2, Layers,
+  Clock, AlertCircle, UserX, Calendar, Hash, Building2, Layers, Key,
 } from 'lucide-react';
 import { AppLayout } from '../../components/layout/AppLayout';
 import { StatusBadge, RoleBadge, CheckStatusBadge } from '../../components/ui/Badge';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { useEmployee, useTerminateEmployee, useUpdateEmployee } from '../../hooks/useEmployees';
+import { useEmployee, useTerminateEmployee, useUpdateEmployee, useResetPassword } from '../../hooks/useEmployees';
 import type { UpdateEmployeePayload } from '../../hooks/useEmployees';
 import {
   useBackgroundCheckList,
@@ -146,6 +146,7 @@ function EditProfileModal({
   onClose: () => void;
 }) {
   const updateEmployee = useUpdateEmployee();
+  const resetPassword  = useResetPassword();
   const toast = useToast();
 
   const [fullName,   setFullName]   = useState(employee.full_name);
@@ -154,15 +155,25 @@ function EditProfileModal({
   const [position,   setPosition]   = useState<Position   | ''>(employee.position   ?? '');
   const [role,       setRole]       = useState<UserRole>(employee.role);
   const [status,     setStatus]     = useState<UserStatus>(employee.status);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPw,   setConfirmPw]   = useState('');
+
+  const isActive = employee.status === 'active';
+  const mismatch = newPassword.length > 0 && confirmPw.length > 0 && newPassword !== confirmPw;
+  const busy = updateEmployee.isPending || resetPassword.isPending;
 
   const inputCls =
     'w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm ' +
     'text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white ' +
-    'focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-colors';
+    'focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-colors ' +
+    'disabled:opacity-50 disabled:cursor-not-allowed';
   const selectCls = inputCls + ' cursor-pointer';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (mismatch) { toast.error('비밀번호가 일치하지 않습니다.'); return; }
+    if (newPassword && newPassword.length < 8) { toast.error('비밀번호는 8자 이상이어야 합니다.'); return; }
+
     const payload: UpdateEmployeePayload = {
       full_name:  fullName.trim(),
       dob,
@@ -173,6 +184,11 @@ function EditProfileModal({
     };
     try {
       await updateEmployee.mutateAsync({ profileId: employee.id, payload });
+
+      if (isActive && newPassword) {
+        await resetPassword.mutateAsync({ userId: employee.id, password: newPassword });
+      }
+
       toast.success(`${fullName} 프로필이 수정되었습니다.`);
       onClose();
     } catch (err) {
@@ -182,14 +198,14 @@ function EditProfileModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200">
+      <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" onClick={() => { if (!busy) onClose(); }} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
           <div>
             <h2 className="font-bold text-slate-900">프로필 수정</h2>
             <p className="mt-0.5 text-xs text-slate-500">{employee.employee_id}</p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors">
+          <button onClick={() => { if (!busy) onClose(); }} disabled={busy} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors disabled:opacity-30">
             <XCircle className="h-5 w-5" />
           </button>
         </div>
@@ -198,15 +214,15 @@ function EditProfileModal({
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="mb-1.5 block text-sm font-medium text-slate-700">이름</label>
-              <input type="text" required value={fullName} onChange={(e) => setFullName(e.target.value)} className={inputCls} />
+              <input type="text" required disabled={busy} value={fullName} onChange={(e) => setFullName(e.target.value)} className={inputCls} />
             </div>
             <div className="col-span-2">
               <label className="mb-1.5 block text-sm font-medium text-slate-700">생년월일</label>
-              <input type="date" required value={dob} onChange={(e) => setDob(e.target.value)} className={inputCls} />
+              <input type="date" required disabled={busy} value={dob} onChange={(e) => setDob(e.target.value)} className={inputCls} />
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">부서</label>
-              <select value={department} onChange={(e) => setDepartment(e.target.value as Department | '')} className={selectCls}>
+              <select disabled={busy} value={department} onChange={(e) => setDepartment(e.target.value as Department | '')} className={selectCls}>
                 <option value="">— 선택 안함 —</option>
                 {DEPARTMENTS.map((d) => (
                   <option key={d} value={d}>{DEPARTMENT_LABELS[d]}</option>
@@ -215,7 +231,7 @@ function EditProfileModal({
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">직급</label>
-              <select value={position} onChange={(e) => setPosition(e.target.value as Position | '')} className={selectCls}>
+              <select disabled={busy} value={position} onChange={(e) => setPosition(e.target.value as Position | '')} className={selectCls}>
                 <option value="">— 선택 안함 —</option>
                 {POSITIONS.map((p) => (
                   <option key={p} value={p}>{POSITION_LABELS[p]}</option>
@@ -224,30 +240,70 @@ function EditProfileModal({
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">권한</label>
-              <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className={selectCls}>
+              <select disabled={busy} value={role} onChange={(e) => setRole(e.target.value as UserRole)} className={selectCls}>
                 <option value="user">직원</option>
                 <option value="admin">관리자</option>
               </select>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">재직 상태</label>
-              <select value={status} onChange={(e) => setStatus(e.target.value as UserStatus)} className={selectCls}>
+              <select disabled={busy} value={status} onChange={(e) => setStatus(e.target.value as UserStatus)} className={selectCls}>
                 <option value="active">재직 중</option>
                 <option value="resigned">퇴사</option>
               </select>
             </div>
           </div>
 
+          {/* 임시 비밀번호 발급 — 재직자만 표시 */}
+          {isActive && (
+            <div className="space-y-3 border-t border-slate-100 pt-4">
+              <div className="flex items-center gap-2">
+
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">새 임시 비밀번호</label>
+                <input
+                  type="password"
+                  disabled={busy}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className={inputCls}
+                  placeholder="변경하지 않으려면 비워두세요 (8자 이상)"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">비밀번호 확인</label>
+                <input
+                  type="password"
+                  disabled={busy}
+                  value={confirmPw}
+                  onChange={(e) => setConfirmPw(e.target.value)}
+                  className={`${inputCls} ${mismatch ? 'border-red-400 focus:border-red-400' : ''}`}
+                  placeholder="비밀번호 재입력"
+                />
+                {mismatch && <p className="mt-1 text-xs text-red-500">비밀번호가 일치하지 않습니다.</p>}
+              </div>
+              <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 ring-1 ring-amber-100">
+                발급 후 직원에게 임시 비밀번호를 직접 전달해주세요.
+              </p>
+            </div>
+          )}
+
           <div className="flex justify-end gap-3 pt-1">
-            <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 active:scale-95 transition-all">
+            <button type="button" onClick={() => { if (!busy) onClose(); }} disabled={busy} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 active:scale-95 transition-all">
               취소
             </button>
             <button
               type="submit"
-              disabled={updateEmployee.isPending}
+              disabled={busy || mismatch}
               className="flex items-center gap-2 rounded-xl bg-[#004192] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#003578] disabled:opacity-50 active:scale-95 transition-all"
             >
-              {updateEmployee.isPending ? '저장 중...' : '저장'}
+              {busy ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  저장 중...
+                </>
+              ) : '저장'}
             </button>
           </div>
         </form>

@@ -9,7 +9,9 @@ export default function LoginPage() {
   // 로그인 후 이동 위치는 항상 /portal 고정
   // (이전 경로 복원 시 권한 없는 페이지로 직접 진입될 수 있어 제거)
   const from = '/portal';
-  const accessDenied = !!(location.state as { accessDenied?: boolean })?.accessDenied;
+  const accessDenied  = !!(location.state as { accessDenied?: boolean })?.accessDenied;
+  const emailChanged  = !!(location.state as { emailChanged?: boolean })?.emailChanged;
+  const newEmail      = (location.state as { newEmail?: string })?.newEmail ?? '';
 
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
@@ -260,6 +262,17 @@ export default function LoginPage() {
                 <div>
                   <p className="text-sm font-semibold text-red-800">접근이 차단되었습니다</p>
                   <p className="mt-0.5 text-xs text-red-600">퇴사 처리된 계정입니다. 인사팀에 문의하세요.</p>
+                </div>
+              </div>
+            )}
+            {emailChanged && (
+              <div className="fade-up fade-up-1 mb-6 flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3.5">
+                <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-blue-500" />
+                <div>
+                  <p className="text-sm font-semibold text-blue-800">이메일이 변경되었습니다</p>
+                  <p className="mt-0.5 text-xs text-blue-600">
+                    새 이메일 <strong>{newEmail}</strong>로 다시 로그인해주세요.
+                  </p>
                 </div>
               </div>
             )}

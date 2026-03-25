@@ -94,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // supabase.auth.signOut()이 sb-*-auth-token 키를 정리하고,
   // iep_profile은 아래에서 명시적으로 제거한다.
   const handleResigned = useCallback(async () => {
+    console.log('[AUTH] handleResigned called');
     try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
     await supabase.auth.signOut();
     navigate('/login', { replace: true, state: { accessDenied: true } });
@@ -102,12 +103,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── 프로필 단건 조회 ──────────────────────────────────────────────
   // PGRST116 = "no rows returned" → null 반환 (프로필 미존재 → 정상 퇴사 처리 흐름)
   // 그 외 오류 = DB 다운 / 네트워크 문제 → throw (로그아웃 처리 금지)
+  // 10초 타임아웃: 응답 없이 무한 대기하면 catch로 빠져 로딩 해제
   const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
-    const { data, error } = await supabase
+    const query = supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .single();
+
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('fetchProfile timeout')), 10_000),
+    );
+
+    const { data, error } = await Promise.race([query, timeout]);
 
     if (error) {
       if (error.code === 'PGRST116') return null; // 프로필 행 없음
@@ -189,27 +197,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [subscribeToProfileStatus]);
 
+  // ── 콜백 refs — useEffect dep [] 유지를 위해 최신 함수를 ref에 동기화 ──
+  const fetchProfileRef           = useRef(fetchProfile);
+  const handleResignedRef         = useRef(handleResigned);
+  const setProfileAndCacheRef     = useRef(setProfileAndCache);
+  const subscribeToProfileStatusRef = useRef(subscribeToProfileStatus);
+  useEffect(() => {
+    fetchProfileRef.current             = fetchProfile;
+    handleResignedRef.current           = handleResigned;
+    setProfileAndCacheRef.current       = setProfileAndCache;
+    subscribeToProfileStatusRef.current = subscribeToProfileStatus;
+  });
+
   // ── Auth 상태 초기화 ────────────────────────────────────────────
   // INITIAL_SESSION: SDK가 localStorage에서 세션을 검증한 후 최초 1회 발생
   //   → 이 이벤트 이후에만 isLoading = false 처리 (세션 유효성 보장)
   useEffect(() => {
     let mounted = true;
+    console.log('[AUTH] useEffect: onAuthStateChange 등록');
 
     const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
+        console.log('[AUTH] onAuthStateChange fired', event);
         if (!mounted) return;
 
         // ── 초기 세션 복원 (새로고침 시 항상 먼저 발생) ──────────────
         if (event === 'INITIAL_SESSION') {
+          console.log('[AUTH] INITIAL_SESSION', { hasSession: !!newSession });
+
           if (!newSession) {
+            console.log('[AUTH] no session, clearing');
             // 세션 없음 — 만료·무효 토큰, 오염 캐시 전부 제거 후 로딩 해제
             setSession(null);
-            setProfileAndCache(null);
+            setProfileAndCacheRef.current(null);
             try {
               Object.keys(localStorage)
                 .filter((k) => k.startsWith('sb-') && k.endsWith('-auth-token'))
                 .forEach((k) => localStorage.removeItem(k));
             } catch { /* 무시 */ }
+            console.log('[AUTH] setLoading(false)');
             setLoading(false);
             setAuthReady(true);
             return;
@@ -219,12 +245,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           // fetchProfile 완료 후 isLoading 해제 — 프로필 없는 상태로 렌더링 방지
           let prof: Profile | null;
+          console.log('[AUTH] fetching profile', newSession.user.id);
           try {
-            prof = await fetchProfile(newSession.user.id);
-          } catch {
+            prof = await fetchProfileRef.current(newSession.user.id);
+            console.log('[AUTH] profile fetched', prof);
+          } catch (e) {
+            console.log('[AUTH] fetchProfile error', e);
             // DB 다운 등 일시적 오류 — 세션 유지, 로그아웃 금지
             // iep_profile 캐시 삭제: stale 캐시가 남으면 다음 새로고침 때 오염
             if (mounted) {
+              try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
+              console.log('[AUTH] setLoading(false)');
+              setLoading(false);
+              setAuthReady(true);
+            }
+            return;
+          }
+          if (!mounted) return;
+
+          if (!prof || prof.status === 'resigned') {
+            console.log('[AUTH] resigned, calling handleResigned');
+            await handleResignedRef.current();
+            return;
+          }
+
+          setProfileAndCacheRef.current(prof);
+          subscribeToProfileStatusRef.current(newSession.user.id);
+          console.log('[AUTH] setLoading(false)');
+          setLoading(false);
+          setAuthReady(true);
+          return;
+        }
+
+        // ── 신규 로그인 / INITIAL_SESSION 미지원 버전의 초기 세션 복원 ────
+        if (event === 'SIGNED_IN') {
+          if (!newSession) return;
+
+          console.log('[AUTH] SIGNED_IN fetching profile', newSession.user.id);
+          let prof: Profile | null;
+          try {
+            prof = await fetchProfileRef.current(newSession.user.id);
+            console.log('[AUTH] SIGNED_IN profile fetched', prof);
+          } catch (e) {
+            console.log('[AUTH] SIGNED_IN fetchProfile error', e);
+            // DB 다운 / 타임아웃 등 일시적 오류 — 세션은 유지, 로그아웃 금지
+            // setSession(null) 금지: 로그인 페이지로 리다이렉트 → 세션 있으니 다시 포털로
+            // → 무한 루프 발생
+            if (mounted) {
+              setSession(newSession);
               try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
               setLoading(false);
               setAuthReady(true);
@@ -234,45 +302,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!mounted) return;
 
           if (!prof || prof.status === 'resigned') {
-            await handleResigned();
-            return;
-          }
-
-          setProfileAndCache(prof);
-          subscribeToProfileStatus(newSession.user.id);
-          setLoading(false);
-          setAuthReady(true);
-          return;
-        }
-
-        // ── 신규 로그인 ───────────────────────────────────────────────
-        if (event === 'SIGNED_IN') {
-          if (!newSession) return;
-
-          let prof: Profile | null;
-          try {
-            prof = await fetchProfile(newSession.user.id);
-          } catch {
-            // DB 다운 등 일시적 오류 — 세션·프로필 초기화 후 로그인 화면으로
-            if (mounted) {
-              setSession(null);
-              setProfileAndCache(null);
-              setLoading(false);
-            }
-            return;
-          }
-          if (!mounted) return;
-
-          if (!prof || prof.status === 'resigned') {
-            await handleResigned();
+            await handleResignedRef.current();
             return;
           }
 
           setSession(newSession);
-          setProfileAndCache(prof);
+          setProfileAndCacheRef.current(prof);
           setLoading(false);
           setAuthReady(true);
-          subscribeToProfileStatus(newSession.user.id);
+          subscribeToProfileStatusRef.current(newSession.user.id);
           return;
         }
 
@@ -282,11 +320,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        // ── 이메일 변경 확인 완료 ────────────────────────────────────
+        // 확인 링크가 새 탭에서 열려 Web Lock을 가로채므로 기존 탭에서
+        // 락 오류가 발생한다. 이메일이 바뀌었으면 로그아웃 후 재로그인 유도.
+        if (event === 'USER_UPDATED' && newSession) {
+          const prevEmail = session?.user?.email;
+          const nextEmail = newSession.user.email;
+          if (prevEmail && nextEmail && prevEmail !== nextEmail) {
+            // 이메일 변경 — 재인증 필요
+            try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
+            await supabase.auth.signOut();
+            navigate('/login', {
+              replace: true,
+              state: { emailChanged: true, newEmail: nextEmail },
+            });
+            return;
+          }
+          setSession(newSession);
+          return;
+        }
+
         // ── 로그아웃 ──────────────────────────────────────────────────
         if (event === 'SIGNED_OUT' || !newSession) {
           setSession(null);
           setProfileAndCache(null);
           setLoading(false);
+          setAuthReady(true);
           currentUserIdRef.current = null;
           if (retryTimerRef.current)      { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
           if (realtimeChannelRef.current) { supabase.removeChannel(realtimeChannelRef.current); realtimeChannelRef.current = null; }
@@ -294,13 +353,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
     );
 
+    // ── INITIAL_SESSION 미지원 버전 폴백 ───────────────────────────
+    // 이 Supabase 버전은 INITIAL_SESSION을 발생시키지 않음.
+    // 세션이 없으면 SIGNED_IN도 오지 않아 isLoading이 영원히 true로 남는 문제를
+    // getSession()으로 직접 확인해 해소한다.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
+      if (!session) {
+        console.log('[AUTH] getSession: no session, releasing loading');
+        setSession(null);
+        setProfileAndCache(null);
+        setLoading(false);
+        setAuthReady(true);
+      }
+    });
+
     return () => {
       mounted = false;
       authSub.unsubscribe();
       if (retryTimerRef.current)      clearTimeout(retryTimerRef.current);
       if (realtimeChannelRef.current) supabase.removeChannel(realtimeChannelRef.current);
     };
-  }, [fetchProfile, handleResigned, subscribeToProfileStatus]);
+  }, []);
 
   // ── 수동 로그아웃 ───────────────────────────────────────────────
   // iep_profile을 먼저 제거 후 signOut — SIGNED_OUT 이벤트에서도 정리되지만 명시적으로 선행 처리

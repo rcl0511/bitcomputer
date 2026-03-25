@@ -153,6 +153,34 @@ export function useUpdateEmployee() {
 }
 
 // =============================================
+// 임시 비밀번호 발급 — Edge Function 호출
+// =============================================
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: async ({ userId, password }: { userId: string; password: string }) => {
+      const { data: refreshData } = await supabase.auth.refreshSession();
+      const accessToken = refreshData.session?.access_token;
+      if (!accessToken) throw new Error('로그인 세션이 만료됐습니다. 다시 로그인해주세요.');
+
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey':        SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ userId, password }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? `서버 오류 (${res.status})`);
+      }
+    },
+  });
+}
+
+// =============================================
 // 퇴사 처리 — status를 'resigned'로 변경
 // =============================================
 export function useTerminateEmployee() {
