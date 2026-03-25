@@ -35,6 +35,7 @@ export function useEmployees(filters: EmployeeFilters = {}) {
       if (error) throw error;
       return data as Profile[];
     },
+    staleTime: 1000 * 30, // 30초 캐시
   });
 }
 
@@ -54,6 +55,7 @@ export function useEmployee(profileId: string | undefined) {
       return data as Profile;
     },
     enabled: !!profileId,
+    staleTime: 1000 * 30,
   });
 }
 

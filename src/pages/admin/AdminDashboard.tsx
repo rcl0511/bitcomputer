@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Search, UserPlus, Users, UserCheck, UserX, CalendarDays,
@@ -244,13 +244,19 @@ function CreateEmployeeModal({ open, onClose }: { open: boolean; onClose: () => 
 // ── Main Page ─────────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const toast = useToast();
-  const [search, setSearch]     = useState('');
-  const [status, setStatus]     = useState<UserStatus | 'all'>('all');
-  const [showCreate, setCreate] = useState(false);
+  const [search, setSearch]         = useState('');
+  const [debouncedSearch, setDebounced] = useState('');
+  const [status, setStatus]         = useState<UserStatus | 'all'>('all');
+  const [showCreate, setCreate]     = useState(false);
   const [terminateTarget, setTerminateTarget] = useState<Profile | null>(null);
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const terminateEmployee = useTerminateEmployee();
-  const { data: employees = [], isLoading } = useEmployees({ search, status });
+  const { data: employees = [], isLoading } = useEmployees({ search: debouncedSearch, status });
 
   const sortedEmployees = [...employees].sort((a, b) => {
     if (a.status === 'resigned' && b.status !== 'resigned') return 1;
