@@ -3,12 +3,12 @@ import { supabase } from '../lib/supabase';
 import {
   createBackgroundCheck,
   getBackgroundCheck,
-  listBackgroundChecks,
 } from '../services/backgroundCheck';
 import type {
   BackgroundCheckRequest,
   BackgroundCheckResult,
 } from '../types/database';
+import { AppError } from '../types/database';
 
 // adminClient 의존성 완전 제거:
 // background_checks INSERT/UPDATE는 일반 supabase 클라이언트로 수행.
@@ -34,22 +34,49 @@ export function useBackgroundCheckResult(checkId: string | null) {
     retry:    false, // apiFetch가 500 재시도 처리, 503은 AppError로 즉시 throw
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return status === 'pending' ? POLL_INTERVAL_MS : false;
+      if (status !== 'pending') return false;
+
+      // 503 발생 시 retryAfter 만큼 대기 후 재시도
+      const err = query.state.error;
+      if (err instanceof AppError && err.statusCode === 503) {
+        return (err.retryAfter ?? 30) * 1_000;
+      }
+
+      return POLL_INTERVAL_MS;
     },
     refetchIntervalInBackground: false,
   });
 }
 
 // =============================================
-// Hook: 직원별 조회 이력 목록
+// Hook: 직원별 조회 이력 목록 (Supabase에서 조회)
 // =============================================
 export function useBackgroundCheckList(employeeId: string | null) {
   return useQuery({
     queryKey: ['background-checks', 'list', employeeId],
-    queryFn:  () => listBackgroundChecks(employeeId!),
-    enabled:  !!employeeId,
+    queryFn:  async (): Promise<import('../types/database').BackgroundCheckList> => {
+      const { data, error } = await supabase
+        .from('background_checks')
+        .select('check_id, status, created_at, completed_at')
+        .eq('employee_id', employeeId!)
+        .order('created_at', { ascending: false });
+
+      if (error) throw new Error(error.message);
+
+      return {
+        employeeId: employeeId!,
+        checks: (data ?? []).map((row) => ({
+          checkId:     row.check_id,
+          status:      row.status,
+          createdAt:   row.created_at,
+          completedAt: row.completed_at ?? null,
+        })),
+        totalCount: (data ?? []).length,
+      };
+    },
+    enabled:   !!employeeId,
     staleTime: 1000 * 30,
-    retry:    false, // apiFetch가 500 재시도 처리
+    retry:     false,
   });
 }
 

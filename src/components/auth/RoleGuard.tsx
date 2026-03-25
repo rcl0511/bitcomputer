@@ -31,7 +31,7 @@ export function RoleGuard({ allowedRoles }: RoleGuardProps) {
   if (!profile) return null;
 
   if (!allowedRoles.includes(profile.role)) {
-    return <Navigate to="/unauthorized" replace />;
+    return <Navigate to="/portal" replace />;
   }
 
   return <Outlet />;

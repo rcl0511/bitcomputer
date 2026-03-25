@@ -20,10 +20,9 @@ export function AuthGuard() {
   const location = useLocation();
 
   if (isLoading) {
-    // Phase 4에서 Skeleton 컴포넌트로 교체
     return (
-      <div className="flex h-screen items-center justify-center">
-        <span className="text-sm text-gray-500">Loading...</span>
+      <div className="flex h-screen items-center justify-center bg-slate-50">
+        <span className="text-sm text-gray-400">Loading...</span>
       </div>
     );
   }

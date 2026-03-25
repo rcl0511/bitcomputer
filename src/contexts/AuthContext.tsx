@@ -42,10 +42,48 @@ const REALTIME_BACKOFF_MS  = [5_000, 10_000, 20_000, 30_000, 60_000];
 export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
-  const [session,           setSession]           = useState<Session | null>(null);
-  const [profile,           setProfile]           = useState<Profile | null>(null);
-  const [isLoading,         setLoading]           = useState(true);
+  // localStorage에서 세션·프로필을 동기적으로 읽어 임시 초기화
+  // ※ 이 값은 UI 깜빡임 방지용 임시 값일 뿐이며,
+  //   최종 판단은 반드시 INITIAL_SESSION 이벤트 이후에 수행된다.
+  const [session, setSession] = useState<Session | null>(() => {
+    try {
+      const key = Object.keys(localStorage).find(
+        (k) => k.startsWith('sb-') && k.endsWith('-auth-token'),
+      );
+      if (!key) return null;
+      const raw = localStorage.getItem(key);
+      return raw ? (JSON.parse(raw) as Session) : null;
+    } catch { return null; }
+  });
+
+  const [profile, setProfile] = useState<Profile | null>(() => {
+    try {
+      const cached = localStorage.getItem('iep_profile');
+      return cached ? (JSON.parse(cached) as Profile) : null;
+    } catch { return null; }
+  });
+
+  // session·profile 둘 다 캐시에 있으면 로딩 없이 즉시 렌더
+  // ※ 1~3번 수정으로 만료 캐시가 남는 경우 자체가 없어지므로 lazy initializer 유지
+  const [isLoading, setLoading] = useState(() => {
+    try {
+      const hasSession = Object.keys(localStorage).some(
+        (k) => k.startsWith('sb-') && k.endsWith('-auth-token'),
+      );
+      const hasProfile = !!localStorage.getItem('iep_profile');
+      return !(hasSession && hasProfile);
+    } catch { return true; }
+  });
   const [realtimeAvailable, setRealtimeAvailable] = useState(true);
+
+  // 프로필 캐시 동기화
+  const setProfileAndCache = useCallback((prof: Profile | null) => {
+    setProfile(prof);
+    try {
+      if (prof) localStorage.setItem('iep_profile', JSON.stringify(prof));
+      else localStorage.removeItem('iep_profile');
+    } catch { /* 스토리지 쓰기 실패 무시 */ }
+  }, []);
 
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const retryTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -53,7 +91,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const currentUserIdRef   = useRef<string | null>(null);
 
   // ── 퇴사 처리 ───────────────────────────────────────────────────────
+  // supabase.auth.signOut()이 sb-*-auth-token 키를 정리하고,
+  // iep_profile은 아래에서 명시적으로 제거한다.
   const handleResigned = useCallback(async () => {
+    try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
     await supabase.auth.signOut();
     navigate('/login', { replace: true, state: { accessDenied: true } });
   }, [navigate]);
@@ -103,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               await handleResigned();
               return;
             }
-            setProfile(updated);
+            setProfileAndCache(updated);
           },
         )
         .subscribe((status) => {
@@ -137,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       realtimeChannelRef.current = channel;
     },
-    [handleResigned],
+    [handleResigned, setProfileAndCache],
   );
 
   // 수동 재연결 — realtimeAvailable === false 시 UI에서 호출
@@ -149,9 +190,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [subscribeToProfileStatus]);
 
   // ── Auth 상태 초기화 ────────────────────────────────────────────
-  // INITIAL_SESSION: SDK가 localStorage에서 세션을 읽어 최초 1회 발생
-  //   → 세션 유무 확인 즉시 isLoading = false → 새로고침 시 Loading 화면 최소화
-  //   → 프로필 fetch는 이후 백그라운드에서 처리
+  // INITIAL_SESSION: SDK가 localStorage에서 세션을 검증한 후 최초 1회 발생
+  //   → 이 이벤트 이후에만 isLoading = false 처리 (세션 유효성 보장)
   useEffect(() => {
     let mounted = true;
 
@@ -162,19 +202,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // ── 초기 세션 복원 (새로고침 시 항상 먼저 발생) ──────────────
         if (event === 'INITIAL_SESSION') {
           if (!newSession) {
+            // 세션 없음 — 만료·무효 토큰일 수 있으므로 오염된 캐시 전부 제거
+            setSession(null);
+            setProfileAndCache(null);
+            try {
+              const staleKey = Object.keys(localStorage).find(
+                (k) => k.startsWith('sb-') && k.endsWith('-auth-token'),
+              );
+              if (staleKey) localStorage.removeItem(staleKey);
+            } catch { /* 무시 */ }
             setLoading(false);
             return;
           }
-          // 세션이 있으면 즉시 로딩 해제 → Loading 화면 제거
-          setSession(newSession);
-          setLoading(false);
 
-          // 프로필 + 퇴사 여부는 백그라운드에서 확인
+          setSession(newSession);
+
+          // 프로필 fetch — 완료 후 isLoading 해제 (검증 전에 화면을 열지 않음)
           let prof: Profile | null;
           try {
             prof = await fetchProfile(newSession.user.id);
           } catch {
             // DB 다운 등 일시적 오류 — 세션 유지, 로그아웃 금지
+            // iep_profile 캐시는 삭제: 프로필 fetch 실패 상태에서 stale 캐시가 남으면
+            // 다음 새로고침 때 lazy initializer가 오염된 값을 읽는다
+            if (mounted) {
+              try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
+              setLoading(false);
+            }
             return;
           }
           if (!mounted) return;
@@ -184,8 +238,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
           }
 
-          setProfile(prof);
+          setProfileAndCache(prof);
           subscribeToProfileStatus(newSession.user.id);
+          setLoading(false);
           return;
         }
 
@@ -197,8 +252,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             prof = await fetchProfile(newSession.user.id);
           } catch {
-            // DB 다운 등 일시적 오류 — 세션 유지, 로그아웃 금지
-            if (mounted) { setSession(newSession); setLoading(false); }
+            // DB 다운 등 일시적 오류 — 세션·프로필 초기화 후 로그인 화면으로
+            if (mounted) {
+              setSession(null);
+              setProfileAndCache(null);
+              setLoading(false);
+            }
             return;
           }
           if (!mounted) return;
@@ -209,7 +268,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           setSession(newSession);
-          setProfile(prof);
+          setProfileAndCache(prof);
           setLoading(false);
           subscribeToProfileStatus(newSession.user.id);
           return;
@@ -224,7 +283,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // ── 로그아웃 ──────────────────────────────────────────────────
         if (event === 'SIGNED_OUT' || !newSession) {
           setSession(null);
-          setProfile(null);
+          setProfileAndCache(null);
           setLoading(false);
           currentUserIdRef.current = null;
           if (retryTimerRef.current)      { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
@@ -242,7 +301,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchProfile, handleResigned, subscribeToProfileStatus]);
 
   // ── 수동 로그아웃 ───────────────────────────────────────────────
+  // iep_profile을 먼저 제거 후 signOut — SIGNED_OUT 이벤트에서도 정리되지만 명시적으로 선행 처리
   const signOut = useCallback(async () => {
+    try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
     await supabase.auth.signOut();
     navigate('/login', { replace: true });
   }, [navigate]);
