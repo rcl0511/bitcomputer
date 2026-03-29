@@ -89,19 +89,34 @@ export function useCreateEmployee() {
       const accessToken = refreshData.session?.access_token;
       if (!accessToken) throw new Error('로그인 세션이 만료됐습니다. 다시 로그인해주세요.');
 
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-employee`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey':        SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ ...edgePayload, department, position }),
+      const body = JSON.stringify({ ...edgePayload, department, position });
+      const makeHeaders = (token: string) => ({
+        'Content-Type': 'application/json',
+        'apikey':        SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${token}`,
       });
 
+      let res = await fetch(`${SUPABASE_URL}/functions/v1/create-employee`, {
+        method: 'POST',
+        headers: makeHeaders(accessToken),
+        body,
+      });
+
+      if (res.status === 401) {
+        const { data: retryData } = await supabase.auth.refreshSession();
+        const newToken = retryData.session?.access_token;
+        if (newToken) {
+          res = await fetch(`${SUPABASE_URL}/functions/v1/create-employee`, {
+            method: 'POST',
+            headers: makeHeaders(newToken),
+            body,
+          });
+        }
+      }
+
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error ?? body?.message ?? `서버 오류 (${res.status})`);
+        const errorBody = await res.json().catch(() => ({}));
+        throw new Error(errorBody?.error ?? errorBody?.message ?? `서버 오류 (${res.status})`);
       }
 
       const data: Profile | null = await res.json().catch(() => null);
@@ -115,9 +130,6 @@ export function useCreateEmployee() {
       qc.setQueryData(['employee', profile.id], profile);
     },
 
-    onError: (err) => {
-      console.error('[useCreateEmployee] 실패:', err);
-    },
   });
 }
 
@@ -164,19 +176,34 @@ export function useResetPassword() {
       const accessToken = refreshData.session?.access_token;
       if (!accessToken) throw new Error('로그인 세션이 만료됐습니다. 다시 로그인해주세요.');
 
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/reset-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey':        SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ userId, password }),
+      const body = JSON.stringify({ userId, password });
+      const makeHeaders = (token: string) => ({
+        'Content-Type': 'application/json',
+        'apikey':        SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${token}`,
       });
 
+      let res = await fetch(`${SUPABASE_URL}/functions/v1/reset-password`, {
+        method: 'POST',
+        headers: makeHeaders(accessToken),
+        body,
+      });
+
+      if (res.status === 401) {
+        const { data: retryData } = await supabase.auth.refreshSession();
+        const newToken = retryData.session?.access_token;
+        if (newToken) {
+          res = await fetch(`${SUPABASE_URL}/functions/v1/reset-password`, {
+            method: 'POST',
+            headers: makeHeaders(newToken),
+            body,
+          });
+        }
+      }
+
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error ?? `서버 오류 (${res.status})`);
+        const errorBody = await res.json().catch(() => ({}));
+        throw new Error(errorBody?.error ?? `서버 오류 (${res.status})`);
       }
     },
   });

@@ -23,7 +23,15 @@
       "Bash(do echo:*)",
       "Read(//c/Users/USER/Desktop/react/bitcomputer/**)",
       "Bash(done)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(find /Users/lynn/개발/bitcomputer/src/components/ui -type f -name *.tsx -o -name *.ts)",
+      "Bash(find /Users/lynn/개발/bitcomputer -maxdepth 2 -name .env* -o -name *.env*)",
+      "Bash(find /Users/lynn/개발/bitcomputer -type f \\\\\\(-name .env* -o -name env.*.ts -o -name config*.ts \\\\\\))",
+      "Bash(grep -r \"file.*size\\\\|MAX.*SIZE\\\\|5.*MB\\\\|10.*MB\" /Users/lynn/개발/bitcomputer/src --include=*.ts --include=*.tsx)",
+      "mcp__ide__getDiagnostics",
+      "Bash(ls:*)",
+      "Bash(grep -rn \"TODO\\\\|FIXME\\\\|BUG\\\\|HACK\" /Users/lynn/개발/bitcomputer/src --include=*.ts --include=*.tsx)",
+      "Bash(grep -rn console. /Users/lynn/개발/bitcomputer/src --include=*.ts --include=*.tsx)"
     ]
   }
 }

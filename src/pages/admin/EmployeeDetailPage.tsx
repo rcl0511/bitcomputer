@@ -16,6 +16,7 @@ import {
   useCreateBackgroundCheck,
   useUpdateBackgroundCheckResult,
   type CreateCheckPayload,
+  POLL_INTERVAL_MS,
 } from '../../hooks/useBackgroundCheck';
 import { useToast } from '../../contexts/ToastContext';
 import { AppError, DEPARTMENT_LABELS, POSITION_LABELS, DEPARTMENTS, POSITIONS } from '../../types/database';
@@ -116,7 +117,7 @@ function RetryCountdown({ seconds, onRetry }: { seconds: number; onRetry: () => 
   );
 }
 
-function ResultItem({ icon: Icon, label, value, ok }: { icon: any; label: string; value: string; ok: boolean }) {
+function ResultItem({ icon: Icon, label, value, ok }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; ok: boolean }) {
   return (
     <div className={`flex items-center gap-3 rounded-xl border p-3 transition-colors ${
       ok ? 'border-slate-100 bg-white shadow-sm' : 'border-rose-100 bg-rose-50/30'
@@ -406,7 +407,9 @@ export default function EmployeeDetailPage() {
     }
   };
 
-  const isPending = checkResult?.status === 'pending';
+  const isPending  = checkResult?.status === 'pending';
+  // checkId는 있는데 첫 응답 전(checkResult 없음)도 대기 상태로 포함
+  const isWaiting  = createCheck.isPending || isPending || (!!activeCheckId && !checkResult && !checkError);
 
   if (loadingEmp) return <PageSkeleton />;
   if (!employee) return <NotFoundView />;
@@ -513,35 +516,43 @@ export default function EmployeeDetailPage() {
               </div>
               <button
                 onClick={() => handleRequestCheck()}
-                disabled={createCheck.isPending || isPending || retryAfter !== null}
+                disabled={isWaiting || retryAfter !== null}
                 className="flex items-center gap-2 rounded-xl bg-[#004192] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-[#004192]/20 hover:bg-[#003578] disabled:opacity-50 transition-all active:scale-95"
               >
-                {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                {isWaiting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
                 조회 요청
               </button>
             </div>
 
-            <div className="p-6 space-y-8">
+            <div className="p-6 space-y-8 min-h-[360px]">
               {retryAfter !== null && (
                 <RetryCountdown seconds={retryAfter} onRetry={handleAutoRetry} />
               )}
 
-              {createCheck.isPending ? (
-                <PendingCheckScreen checkId="요청 처리 중..." />
+              {isWaiting ? (
+                <>
+                  <PendingCheckScreen checkId={activeCheckId ?? '요청 처리 중...'} />
+                  {checkError && !isPending && (
+                    <div className="flex items-center gap-3 rounded-xl border border-amber-100 bg-amber-50/50 px-4 py-3">
+                      <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
+                      <p className="text-xs font-medium text-amber-700">
+                        API 응답 오류 — 자동 재시도 중 ({POLL_INTERVAL_MS / 1000}초 간격)
+                      </p>
+                    </div>
+                  )}
+                </>
               ) : activeCheckId ? (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400">현재 상태 진단</h4>
-                    {isPolling && isPending && (
+                    {isPolling && (
                       <span className="flex items-center gap-1.5 text-[11px] font-black text-amber-600 bg-amber-50 px-2 py-1 rounded-md ring-1 ring-amber-100">
                         <Loader2 className="h-3 w-3 animate-spin" /> POLLING...
                       </span>
                     )}
                   </div>
-                  
-                  {isPending ? (
-                    <PendingCheckScreen checkId={activeCheckId!} />
-                  ) : checkResult ? (
+
+                  {checkResult ? (
                     <div className={`rounded-2xl border p-6 ${checkResult.status === 'clear' ? 'border-emerald-100 bg-emerald-50/20' : 'border-rose-100 bg-rose-50/20'}`}>
                        <div className="mb-6 flex items-center gap-5">
                           <div className={`flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm ${checkResult.status === 'clear' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
@@ -595,7 +606,7 @@ export default function EmployeeDetailPage() {
                     </div>
                   ) : !history?.checks.length ? (
                     <p className="text-xs text-slate-400 py-2">조회 이력이 없습니다.</p>
-                  ) : history.checks.map((check) => (
+                  ) : history.checks.slice(0, 5).map((check) => (
                     <button
                       key={check.checkId}
                       onClick={() => setActiveCheckId(check.checkId)}
@@ -613,6 +624,11 @@ export default function EmployeeDetailPage() {
                       <CheckStatusBadge status={check.status} />
                     </button>
                   ))}
+                  {(history?.checks.length ?? 0) > 5 && (
+                    <p className="text-center text-[11px] text-slate-400 pt-1">
+                      최근 5건만 표시됩니다 (전체 {history!.checks.length}건)
+                    </p>
+                  )}
                 </div>
               </div>}
             </div>

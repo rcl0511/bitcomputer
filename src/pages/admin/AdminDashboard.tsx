@@ -380,60 +380,57 @@ export default function AdminDashboard() {
                 </td>
               </tr>
             ) : (
-              sortedEmployees.map((emp) => (
+              sortedEmployees.map((emp) => {
+                const resigned = emp.status === 'resigned';
+                return (
                 <tr key={emp.id}
-                  className="group transition-colors hover:bg-slate-50/80">
+                  className={`group transition-colors ${resigned ? 'bg-slate-50/60' : 'hover:bg-slate-50/80'}`}>
                   <td className="px-5 py-4">
-                    <span className="font-mono text-xs text-slate-500">{emp.employee_id}</span>
+                    <span className={`font-mono text-xs ${resigned ? 'text-slate-300' : 'text-slate-500'}`}>{emp.employee_id}</span>
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full overflow-hidden bg-indigo-100 text-xs font-semibold text-indigo-700">
+                      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full overflow-hidden text-xs font-semibold
+                        ${resigned ? 'bg-slate-100 text-slate-300 grayscale' : 'bg-indigo-100 text-indigo-700'}`}>
                         {emp.avatar_url
-                          ? <img src={emp.avatar_url} alt={emp.full_name} className="h-full w-full object-cover" />
+                          ? <img src={emp.avatar_url} alt={emp.full_name} className={`h-full w-full object-cover ${resigned ? 'grayscale opacity-40' : ''}`} />
                           : emp.full_name[0]
                         }
                       </div>
-                      <span className="text-sm font-medium text-slate-900">{emp.full_name}</span>
+                      <span className={`text-sm font-medium ${resigned ? 'text-slate-300 line-through decoration-slate-300' : 'text-slate-900'}`}>{emp.full_name}</span>
                     </div>
                   </td>
-                  <td className="px-5 py-4"><RoleBadge role={emp.role} /></td>
+                  <td className={`px-5 py-4 ${resigned ? 'opacity-30' : ''}`}><RoleBadge role={emp.role} /></td>
                   <td className="px-5 py-4"><StatusBadge status={emp.status} /></td>
                   <td className="px-5 py-4">
-                    <div className="flex items-center gap-1.5 text-sm text-slate-500">
+                    <div className={`flex items-center gap-1.5 text-sm ${resigned ? 'text-slate-300' : 'text-slate-500'}`}>
                       <CalendarDays className="h-3.5 w-3.5" />
                       {emp.dob}
                     </div>
                   </td>
                   <td className="px-5 py-4">
-                    <span className="text-sm text-slate-500">
+                    <span className={`text-sm ${resigned ? 'text-slate-300' : 'text-slate-500'}`}>
                       {emp.department ? DEPARTMENT_LABELS[emp.department] : '—'}
                     </span>
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex items-center justify-end gap-2">
-                      {emp.status === 'active' && (
-                        <button
-                          onClick={() => setTerminateTarget(emp)}
-                          className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5
-                            text-xs font-semibold text-red-600 hover:bg-red-100
-                            active:scale-95 transition-all"
-                        >
-                          퇴사 처리
-                        </button>
-                      )}
                       <Link
                         to={`/admin/employees/${emp.id}`}
-                        className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white
-                          px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50
-                          hover:text-slate-900 active:scale-95 transition-all shadow-sm"
+                        className={`flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-medium
+                          active:scale-95 transition-all shadow-sm
+                          ${resigned
+                            ? 'border-slate-100 bg-slate-50 text-slate-300 hover:bg-slate-100'
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                          }`}
                       >
                         상세 <ChevronRight className="h-3.5 w-3.5" />
                       </Link>
                     </div>
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>

@@ -24,6 +24,13 @@ function AvatarUpload({ profile, onUploaded }: { profile: Profile; onUploaded: (
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+    if (file.size > MAX_SIZE) {
+      toast.error('이미지 파일은 5MB 이하만 업로드할 수 있습니다.');
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+
     setUploading(true);
     try {
       const ext  = file.name.split('.').pop();
@@ -173,7 +180,7 @@ export default function PortalPage() {
       toast.error('새 비밀번호가 일치하지 않습니다.');
       return;
     }
-    if (newPassword && newPassword.length < 6) {
+    if (newPassword && newPassword.length < 8) {
       toast.error('비밀번호는 6자 이상이어야 합니다.');
       return;
     }

@@ -7,8 +7,10 @@ import {
 import type {
   BackgroundCheckRequest,
   BackgroundCheckResult,
+  BackgroundCheckList,
 } from '../types/database';
 import { AppError } from '../types/database';
+import { useToast } from '../contexts/ToastContext';
 
 // adminClient 의존성 완전 제거:
 // background_checks INSERT/UPDATE는 일반 supabase 클라이언트로 수행.
@@ -16,7 +18,7 @@ import { AppError } from '../types/database';
 // 관리자 세션(JWT)을 가진 요청만 허용하므로 보안 수준은 동일하다.
 
 // 결과 도출까지 약 2분 소요 → 30초 간격으로 폴링 (과도한 재시도 방지)
-const POLL_INTERVAL_MS = 30_000;
+export const POLL_INTERVAL_MS = 30_000;
 
 // =============================================
 // CreateCheckPayload — POST 요청 + Supabase 저장에 필요한 데이터
@@ -35,14 +37,17 @@ export function useBackgroundCheckResult(checkId: string | null) {
     retry:    false, // apiFetch가 500 재시도 처리, 503은 AppError로 즉시 throw
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      if (status !== 'pending') return false;
 
-      // 503 발생 시 retryAfter 만큼 대기 후 재시도
+      // 완료 상태 — 폴링 중단
+      if (status === 'clear' || status === 'flagged') return false;
+
+      // 503 — retryAfter 만큼 대기 후 재시도
       const err = query.state.error;
       if (err instanceof AppError && err.statusCode === 503) {
         return (err.retryAfter ?? 30) * 1_000;
       }
 
+      // pending 중이거나 500/네트워크 에러 → 계속 폴링 (일시적 오류로 간주)
       return POLL_INTERVAL_MS;
     },
     refetchIntervalInBackground: false,
@@ -55,14 +60,14 @@ export function useBackgroundCheckResult(checkId: string | null) {
 export function useBackgroundCheckList(employeeId: string | null) {
   return useQuery({
     queryKey: ['background-checks', 'list', employeeId],
-    queryFn:  async (): Promise<import('../types/database').BackgroundCheckList> => {
+    queryFn:  async (): Promise<BackgroundCheckList> => {
       const { data, error } = await supabase
         .from('background_checks')
         .select('check_id, status, created_at, completed_at')
         .eq('employee_id', employeeId!)
         .order('created_at', { ascending: false });
 
-      if (error) throw new Error(error.message);
+      if (error) throw new AppError(error.message, 500);
 
       return {
         employeeId: employeeId!,
@@ -90,6 +95,7 @@ export function useBackgroundCheckList(employeeId: string | null) {
 // =============================================
 export function useCreateBackgroundCheck() {
   const queryClient = useQueryClient();
+  const toast = useToast();
 
   return useMutation({
     mutationFn: async ({ profileId, ...request }: CreateCheckPayload) => {
@@ -111,8 +117,8 @@ export function useCreateBackgroundCheck() {
         });
 
       if (dbError) {
-        // INSERT 실패는 로그만 — 외부 API 호출은 성공했으므로 폴링은 계속 진행
-        console.error('[useCreateBackgroundCheck] Supabase INSERT 실패:', dbError.message);
+        // INSERT 실패는 warning — 외부 API 호출은 성공했으므로 폴링은 계속 진행
+        toast.warning('배경 조회 기록 저장 실패 (조회는 계속 진행됩니다)');
       }
 
       return created;
@@ -150,6 +156,7 @@ export function useCreateBackgroundCheck() {
 // =============================================
 export function useUpdateBackgroundCheckResult() {
   const queryClient = useQueryClient();
+  const toast = useToast();
 
   return useMutation({
     mutationFn: async (result: BackgroundCheckResult) => {
@@ -166,7 +173,7 @@ export function useUpdateBackgroundCheckResult() {
         .eq('check_id', result.checkId);
 
       if (error) {
-        console.error('[useUpdateBackgroundCheckResult] Supabase UPDATE 실패:', error.message);
+        toast.warning('배경 조회 결과 저장 실패');
       }
     },
     onSuccess: (_, result) => {

@@ -7,9 +7,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in .env');
 }
 
+// sessionStorage 어댑터 — 새로고침엔 세션 유지, 탭/창 닫으면 자동 로그아웃
+const sessionStorageAdapter = {
+  getItem:    (key: string) => sessionStorage.getItem(key),
+  setItem:    (key: string, value: string) => sessionStorage.setItem(key, value),
+  removeItem: (key: string) => sessionStorage.removeItem(key),
+};
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession:   true,   // 탭을 닫아도 세션 유지 (localStorage)
+    persistSession:   true,
+    storage:          sessionStorageAdapter,
     autoRefreshToken: true,   // Realtime과 세션 갱신 충돌 방지
   },
   realtime: {

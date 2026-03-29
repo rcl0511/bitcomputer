@@ -8,14 +8,14 @@ const base = 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs 
 // =============================================
 const STATUS_CONFIG: Record<UserStatus, { dot: string; label: string; style: string }> = {
   active: {
-    dot:   'bg-slate-400',
+    dot:   'bg-emerald-500',
     label: '재직 중',
-    style: 'bg-slate-50 text-slate-600 ring-slate-300/50',
+    style: 'bg-emerald-50 text-emerald-700 ring-emerald-600/15',
   },
   resigned: {
-    dot:   'bg-slate-400',
+    dot:   'bg-red-400',
     label: '퇴사',
-    style: 'bg-slate-50 text-slate-600 ring-slate-300/50',
+    style: 'bg-red-50 text-red-600 ring-red-500/15',
   },
 };
 

@@ -45,26 +45,10 @@ const REALTIME_BACKOFF_MS  = [5_000, 10_000, 20_000, 30_000, 60_000];
 export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
-  // localStorage에서 세션·프로필을 동기적으로 읽어 임시 초기화
-  // ※ 이 값은 UI 깜빡임 방지용 임시 값일 뿐이며,
-  //   최종 판단은 반드시 INITIAL_SESSION 이벤트 이후에 수행된다.
-  const [session, setSession] = useState<Session | null>(() => {
-    try {
-      const key = Object.keys(localStorage).find(
-        (k) => k.startsWith('sb-') && k.endsWith('-auth-token'),
-      );
-      if (!key) return null;
-      const raw = localStorage.getItem(key);
-      return raw ? (JSON.parse(raw) as Session) : null;
-    } catch { return null; }
-  });
-
-  const [profile, setProfile] = useState<Profile | null>(() => {
-    try {
-      const cached = localStorage.getItem('iep_profile');
-      return cached ? (JSON.parse(cached) as Profile) : null;
-    } catch { return null; }
-  });
+  // persistSession: false — SDK가 메모리에서만 세션을 관리하므로
+  // localStorage 동기 초기화가 불필요해졌다.
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   // 캐시가 있어도 만료 상태일 수 있으므로 항상 true로 시작
   // INITIAL_SESSION 완료 후에만 false로 전환 → AuthGuard가 검증 전 렌더 차단
@@ -76,13 +60,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authReady, setAuthReady] = useState(false);
   const [realtimeAvailable, setRealtimeAvailable] = useState(true);
 
-  // 프로필 캐시 동기화
   const setProfileAndCache = useCallback((prof: Profile | null) => {
     setProfile(prof);
-    try {
-      if (prof) localStorage.setItem('iep_profile', JSON.stringify(prof));
-      else localStorage.removeItem('iep_profile');
-    } catch { /* 스토리지 쓰기 실패 무시 */ }
   }, []);
 
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -94,7 +73,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // supabase.auth.signOut()이 sb-*-auth-token 키를 정리하고,
   // iep_profile은 아래에서 명시적으로 제거한다.
   const handleResigned = useCallback(async () => {
-    try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
     await supabase.auth.signOut();
     navigate('/login', { replace: true, state: { accessDenied: true } });
   }, [navigate]);
@@ -199,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   // ── Auth 상태 초기화 ────────────────────────────────────────────
-  // INITIAL_SESSION: SDK가 localStorage에서 세션을 검증한 후 최초 1회 발생
+  // INITIAL_SESSION: SDK가 메모리에서 세션을 확인한 후 최초 1회 발생
   //   → 이 이벤트 이후에만 isLoading = false 처리 (세션 유효성 보장)
   useEffect(() => {
     let mounted = true;
@@ -211,14 +189,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // ── 초기 세션 복원 (새로고침 시 항상 먼저 발생) ──────────────
         if (event === 'INITIAL_SESSION') {
           if (!newSession) {
-            // 세션 없음 — 만료·무효 토큰, 오염 캐시 전부 제거 후 로딩 해제
+            // 세션 없음 → 로딩 해제
             setSession(null);
             setProfileAndCacheRef.current(null);
-            try {
-              Object.keys(localStorage)
-                .filter((k) => k.startsWith('sb-') && k.endsWith('-auth-token'))
-                .forEach((k) => localStorage.removeItem(k));
-            } catch { /* 무시 */ }
             setLoading(false);
             setAuthReady(true);
             return;
@@ -231,7 +204,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             prof = await fetchProfileRef.current(newSession.user.id);
           } catch {
             if (mounted) {
-              try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
               setLoading(false);
               setAuthReady(true);
             }
@@ -260,11 +232,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             prof = await fetchProfileRef.current(newSession.user.id);
           } catch {
             // DB 다운 / 타임아웃 등 일시적 오류 — 세션은 유지, 로그아웃 금지
-            // setSession(null) 금지: 로그인 페이지로 리다이렉트 → 세션 있으니 다시 포털로
-            // → 무한 루프 발생
             if (mounted) {
               setSession(newSession);
-              try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
               setLoading(false);
               setAuthReady(true);
             }
@@ -299,7 +268,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const nextEmail = newSession.user.email;
           if (prevEmail && nextEmail && prevEmail !== nextEmail) {
             // 이메일 변경 — 재인증 필요
-            try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
             await supabase.auth.signOut();
             navigate('/login', {
               replace: true,
@@ -347,9 +315,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── 수동 로그아웃 ───────────────────────────────────────────────
-  // iep_profile을 먼저 제거 후 signOut — SIGNED_OUT 이벤트에서도 정리되지만 명시적으로 선행 처리
   const signOut = useCallback(async () => {
-    try { localStorage.removeItem('iep_profile'); } catch { /* 무시 */ }
     await supabase.auth.signOut();
     navigate('/login', { replace: true });
   }, [navigate]);
